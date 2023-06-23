@@ -5,10 +5,10 @@ import json
 import glob
 import argparse
 from datetime import datetime
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
 import logging
 
-from distutils.version import LooseVersion
+from packaging.version import Version
 import requests
 from demisto_sdk.commands.common.tools import run_command, get_dict_from_file
 from Tests.scripts.utils.log_util import install_logging
@@ -82,8 +82,13 @@ def get_new_entity_record(entity_path: str) -> Tuple[str, str]:
         if not name:
             name = data.get('brandName')
 
+    if 'indicatortypes' in entity_path.lower():
+        name = data.get('details')
+        if not name:
+            name = data.get('id')
+
     if name == entity_path:
-        logging.error(f'missing name for {entity_path}')
+        logging.warning(f'missing name for {entity_path}')
 
     # script entities has "comment" instead of "description"
     description = data.get('description', '') or data.get('comment', '')
@@ -117,13 +122,15 @@ def construct_entities_block(entities_data: dict) -> str:
     """
     release_notes = ''
     for entity_type, entities_description in sorted(entities_data.items()):
-        pretty_entity_type = re.sub(r'(\w)([A-Z])', r'\1 \2', entity_type)
+        pretty_entity_type = re.sub(r'([a-z])([A-Z])', r'\1 \2', entity_type)
         release_notes += f'#### {pretty_entity_type}\n'
+        if '[special_msg]' in entities_description:
+            release_notes += f'{str(entities_description.pop("[special_msg]"))}\n'
         for name, description in entities_description.items():
             if entity_type in ('Connections', 'IncidentTypes', 'IndicatorTypes', 'Layouts', 'IncidentFields',
                                'Incident Types', 'Indicator Types', 'Incident Fields'):
                 release_notes += f'- **{name}**\n{description}\n'
-            else:
+            elif description.strip():
                 release_notes += f'##### {name}\n{description}\n'
 
     return release_notes
@@ -274,8 +281,10 @@ def aggregate_release_notes_for_marketplace(pack_versions_dict: dict):
 
     """
     pack_release_notes, _ = merge_version_blocks(pack_versions_dict)
-    pack_release_notes = f'{pack_release_notes}\n' if not pack_release_notes.endswith('\n') else pack_release_notes
-    pack_release_notes = f'\n{pack_release_notes}' if not pack_release_notes.startswith('\n') else pack_release_notes
+    pack_release_notes = f'{pack_release_notes}\n' if not pack_release_notes.endswith(  # type: ignore[union-attr]
+        '\n') else pack_release_notes
+    pack_release_notes = f'\n{pack_release_notes}' if not pack_release_notes.startswith(  # type: ignore[union-attr]
+        '\n') else pack_release_notes
     return pack_release_notes
 
 
@@ -298,22 +307,23 @@ def aggregate_release_notes(pack_name: str, pack_versions_dict: dict, pack_metad
             f'{pack_release_notes}')
 
 
-def merge_version_blocks(pack_versions_dict: dict) -> Tuple[str, str]:
+def merge_version_blocks(pack_versions_dict: dict, return_str: bool = True) -> Tuple[Union[str, dict], str]:
     """
     merge several pack release note versions into a single block.
 
     Args:
         pack_versions_dict: a mapping from a pack version to a release notes file content.
+        return_str: Whether to return the release notes in str format. Return in a dict if false.
 
     Returns:
-        str: a single pack release note block
+        str/dict: a single pack release note block
         str: the pack's latest version
 
     """
     latest_version = '1.0.0'
     entities_data: dict = {}
     for pack_version, version_release_notes in sorted(pack_versions_dict.items(),
-                                                      key=lambda pack_item: LooseVersion(pack_item[0])):
+                                                      key=lambda pack_item: Version(pack_item[0])):
         latest_version = pack_version
         version_release_notes = version_release_notes.strip()
         # extract release notes sections by content types (all playbooks, all scripts, etc...)
@@ -325,7 +335,8 @@ def merge_version_blocks(pack_versions_dict: dict) -> Tuple[str, str]:
             # blocks of entity name and related release notes comments
             entity_section = section[1] or section[3]
             entities_data.setdefault(entity_type, {})
-
+            if not entity_section.strip().startswith('#####'):
+                entity_section = "##### [special_msg]\n" + entity_section
             # extract release notes comments by entity
             # assuming all entity titles start with level 5 header ("#####") and then a list of all comments
             entity_comments = ENTITY_SECTION_REGEX.findall(entity_section)
@@ -340,9 +351,9 @@ def merge_version_blocks(pack_versions_dict: dict) -> Tuple[str, str]:
                 else:
                     entities_data[entity_type][entity_name] = f'{entity_comment.strip()}\n'
 
-    pack_release_notes = construct_entities_block(entities_data).strip()
+    pack_release_notes = construct_entities_block(entities_data).strip() if return_str else entities_data
 
-    return pack_release_notes, latest_version
+    return pack_release_notes, latest_version  # type: ignore[return-value]
 
 
 def generate_release_notes_summary(new_packs_release_notes, modified_release_notes_dict, packs_metadata_dict, version,
@@ -374,7 +385,7 @@ def generate_release_notes_summary(new_packs_release_notes, modified_release_not
         pack_metadata = packs_metadata_dict[pack_name]
         pack_rn_blocks.append(aggregate_release_notes(pack_name, pack_versions_dict, pack_metadata))
         # for pack_version, pack_release_notes in sorted(pack_versions_dict.items(),
-        #                                                key=lambda pack_item: LooseVersion(pack_item[0])):
+        #                                                key=lambda pack_item: Version(pack_item[0])):
         #     pack_rn_blocks.append(f'### {pack_name} Pack v{pack_version}\n'
         #                           f'{pack_release_notes.strip()}')
 
@@ -416,8 +427,8 @@ def get_release_notes_draft(github_token, asset_id):
         return ''
 
     # Disable insecure warnings
-    requests.packages.urllib3.disable_warnings()  # pylint: disable=no-member
-
+    import urllib3
+    urllib3.disable_warnings()
     try:
         res = requests.get('https://api.github.com/repos/demisto/content/releases',
                            verify=False,  # guardrails-disable-line

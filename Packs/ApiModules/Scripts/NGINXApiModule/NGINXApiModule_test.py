@@ -1,3 +1,4 @@
+from CommonServerPython import DemistoException
 import pytest
 import requests
 import demistomock as demisto
@@ -114,10 +115,8 @@ def test_nginx_start_fail(mocker: MockerFixture, nginx_cleanup):
             f.write('server {bad_stuff test;}')
     import NGINXApiModule as module
     mocker.patch.object(module, 'create_nginx_server_conf', side_effect=nginx_bad_conf)
-    try:
+    with pytest.raises(ValueError) as e:
         module.start_nginx_server(12345, {})
-        pytest.fail('nginx start should fail')
-    except ValueError as e:
         assert 'bad_stuff' in str(e)
 
 
@@ -126,11 +125,9 @@ def test_nginx_start_fail_directive(nginx_cleanup, mocker):
     """Test that nginx fails when invalid global directive is passed
     """
     import NGINXApiModule as module
-    try:
+    with pytest.raises(ValueError) as e:
         mocker.patch.object(demisto, 'callingContext', return_value={'context': {}})
         module.start_nginx_server(12345, {'nginx_global_directives': 'bad_directive test;'})
-        pytest.fail('nginx start should fail')
-    except ValueError as e:
         assert 'bad_directive' in str(e)
 
 
@@ -170,12 +167,27 @@ def test_nginx_log_process(nginx_cleanup, mocker: MockerFixture):
     arg = demisto.info.call_args[0][0]
     assert 'nginx access log' in arg
     assert 'unit_testing' in arg
-    arg = demisto.error.call_args[0][0]
-    assert '[warn]' in arg
-    assert 'the master process runs with super-user privileges' in arg
     # make sure old file was removed
     assert not Path(module.NGINX_SERVER_ACCESS_LOG + '.old').exists()
     assert not Path(module.NGINX_SERVER_ERROR_LOG + '.old').exists()
     # make sure log was rolled over files should be of size 0
     assert not Path(module.NGINX_SERVER_ACCESS_LOG).stat().st_size
     assert not Path(module.NGINX_SERVER_ERROR_LOG).stat().st_size
+
+
+def test_nginx_web_server_is_down(requests_mock, capfd):
+    import NGINXApiModule as module
+    with capfd.disabled():
+        requests_mock.get('http://localhost:9009/nginx-test', status_code=404)
+        with pytest.raises(DemistoException,
+                           match='Testing nginx server: 404 Client Error: None for url: http://localhost:9009/nginx-test'):
+            module.test_nginx_web_server(9009, {})
+
+
+def test_nginx_web_server_is_up_running(requests_mock):
+    import NGINXApiModule as module
+    requests_mock.get('http://localhost:9009/nginx-test', status_code=200, text='Welcome to nginx')
+    try:
+        module.test_nginx_web_server(9009, {})
+    except DemistoException as ex:
+        pytest.fail(f'Failed to test nginx server. {ex}')

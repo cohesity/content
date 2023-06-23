@@ -1,16 +1,21 @@
+from requests import Response
+import urllib3
 import demistomock as demisto
 from typing import Callable, Tuple
 from CommonServerPython import *  # noqa # pylint: disable=unused-wildcard-import
 from CommonServerUserPython import *  # noqa
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()  # pylint: disable=no-member
+DEFAULT_POLL_INTERVAL = 5
+urllib3.disable_warnings()
 
 ''' CONSTANTS '''
+DEFAULT_POLL_TIMEOUT = 60
 INTEGRATION_NAME = 'Opsgenie'
 ALERTS_SUFFIX = "alerts"
 REQUESTS_SUFFIX = "requests"
 SCHEDULE_SUFFIX = "schedules"
+USERS_SUFFIX = "users"
 INCIDENTS_SUFFIX = "incidents"
 ESCALATION_SUFFIX = "escalations"
 TEAMS_SUFFIX = "teams"
@@ -27,21 +32,15 @@ class Client(BaseClient):
     OpsGenieV3 Client
     """
 
-    def get_request(self, args: dict) -> Dict:
-        url_suffix = "/v1" if args.get('request_type_suffix') == INCIDENTS_SUFFIX else "/v2"
-        try:
-            res = self._http_request(
-                method='GET',
-                url_suffix=f"{url_suffix}/{args.get('request_type_suffix')}/{REQUESTS_SUFFIX}/"
-                           f"{args.get('request_id')}"
-            )
-        except DemistoException as e:
-            raise e
+    def get_request(self, args: dict) -> Response:
+        url_suffix = "/v1" if args.get('request_type') == INCIDENTS_SUFFIX else "/v2"
 
-        if not demisto.get(res, "data.success"):
-            status = demisto.get(res, "data.status")
-            raise DemistoException(f"The command failed, the reason: {status}")
-        return res
+        return self._http_request(
+            method='GET',
+            url_suffix=f"{url_suffix}/{args.get('request_type')}/{REQUESTS_SUFFIX}/"
+                       f"{args.get('request_id')}",
+            ok_codes=(404, 200),
+            resp_type='response')
 
     def get_paged(self, args: dict):
         data = self._http_request(
@@ -180,7 +179,7 @@ class Client(BaseClient):
                                              f"{args.get('alert-id')}/attachments")
 
     def get_schedule(self, args: dict):
-        if not (args.get("schedule_id") and args.get("schedule_name")):
+        if not is_one_argument_given(args.get("schedule_id"), args.get("schedule_name")):
             raise DemistoException("Either schedule_id or schedule_name should be provided.")
         identifier_type = "id" if args.get("schedule_id") else "name"
         schedule = args.get("schedule_id", None) or args.get("schedule_name", None)
@@ -212,12 +211,8 @@ class Client(BaseClient):
                                   )
 
     def get_on_call(self, args: dict):
-        return self._http_request(method='GET',
-                                  url_suffix=f"/v2/{SCHEDULE_SUFFIX}/"
-                                             f"{args.get('schedule')}/on-calls",
-                                  params={"scheduleIdentifierType":
-                                          args.get('scheduleIdentifierType')}
-                                  )
+        return self._http_request(method='GET', url_suffix=f"/v2/{SCHEDULE_SUFFIX}/" f"{args.get('schedule')}/on-calls",
+                                  params={"scheduleIdentifierType": args.get('scheduleIdentifierType')})
 
     def create_incident(self, args: dict):
         args['responders'] = argToList(args.get('responders'))
@@ -309,6 +304,12 @@ class Client(BaseClient):
                                   params={"tags": args.get('tags')},
                                   json_data=args)
 
+    def invite_user(self, args):
+        return self._http_request(method='POST',
+                                  url_suffix=f"/v2/{USERS_SUFFIX}",
+                                  json_data=args
+                                  )
+
     def get_team(self, args: dict):
         return self._http_request(method='GET',
                                   url_suffix=f"/v2/{TEAMS_SUFFIX}/{args.get('team_id')}"
@@ -320,15 +321,28 @@ class Client(BaseClient):
                                   )
 
 
+''' HELPER FUNCTIONS '''
+
+
+def is_one_argument_given(arg1, arg2):
+    """
+    checks that out of two arguments only one argument is set.
+    :param arg1: first argument
+    :param arg2: second argument
+    :return: True if only one argument is set else False
+    """
+
+    return bool(arg1) ^ bool(arg2)
+
+
 ''' COMMAND FUNCTIONS '''
 
 
 def run_polling_paging_command(args: dict, cmd: str, results_function: Callable,
                                action_function: Optional[Callable] = None) -> CommandResults:
-
     ScheduledCommand.raise_error_if_not_supported()
 
-    interval_in_secs = int(args.get('interval_in_seconds', 5))
+    interval_in_secs = int(args.get('interval_in_seconds', DEFAULT_POLL_INTERVAL))
     result = args.get('result', [])
     limit = int(args.get('limit', 20))
 
@@ -363,9 +377,9 @@ def run_polling_paging_command(args: dict, cmd: str, results_function: Callable,
             }
             scheduled_command = ScheduledCommand(
                 command=cmd,
-                next_run_in_seconds=int(args.get('interval_in_seconds', 5)),
+                next_run_in_seconds=int(args.get('interval_in_seconds', DEFAULT_POLL_INTERVAL)),
                 args=polling_args,
-                timeout_in_seconds=int(args.get('timeout_in_seconds', 60)),
+                timeout_in_seconds=int(args.get('timeout_in_seconds', DEFAULT_POLL_TIMEOUT)),
             )
             return CommandResults(scheduled_command=scheduled_command,
                                   readable_output=f"Waiting for request_id={request_id}",
@@ -400,9 +414,9 @@ def run_polling_paging_command(args: dict, cmd: str, results_function: Callable,
         }
         scheduled_command = ScheduledCommand(
             command=cmd,
-            next_run_in_seconds=int(args.get('interval_in_seconds', 5)),
+            next_run_in_seconds=int(args.get('interval_in_seconds', DEFAULT_POLL_INTERVAL)),
             args=polling_args,
-            timeout_in_seconds=int(args.get('timeout_in_seconds', 60))
+            timeout_in_seconds=int(args.get('timeout_in_seconds', DEFAULT_POLL_TIMEOUT))
         )
         # result with scheduled_command only - no update to the war room
         command_results = CommandResults(scheduled_command=scheduled_command,
@@ -413,7 +427,8 @@ def run_polling_paging_command(args: dict, cmd: str, results_function: Callable,
     return CommandResults(outputs_prefix=args.get("output_prefix", "OpsGenie"),
                           outputs=results.get("data"),
                           readable_output=tableToMarkdown("OpsGenie", results.get('data'),
-                                                          headers=['id', 'createdAt', 'acknowledged', 'count', 'status', 'tags'],
+                                                          headers=['id', 'createdAt', 'acknowledged', 'count', 'status',
+                                                                   'tags'],
                                                           removeNull=True
                                                           ),
                           raw_response=results
@@ -435,7 +450,7 @@ def test_module(client: Client, params: dict) -> str:
 
 def create_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.Alert',
         **args
     }
@@ -444,13 +459,7 @@ def create_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def get_alerts(client: Client, args: Dict[str, Any]) -> CommandResults:
@@ -474,7 +483,7 @@ def list_alerts(client: Client, args: Dict[str, Any]) -> CommandResults:
     polling_args = {
         'url_suffix': f"/v2/{ALERTS_SUFFIX}",
         'output_prefix': 'OpsGenie.Alert',
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         **args
     }
     polling_result = run_polling_paging_command(args=polling_args,
@@ -486,7 +495,7 @@ def list_alerts(client: Client, args: Dict[str, Any]) -> CommandResults:
 
 def delete_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.DeletedAlert',
         **args
     }
@@ -495,18 +504,12 @@ def delete_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def ack_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.AckedAlert',
         **args
     }
@@ -515,18 +518,12 @@ def ack_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def close_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.ClosedAlert',
         **args
     }
@@ -535,13 +532,7 @@ def close_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def assign_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
@@ -549,11 +540,11 @@ def assign_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
         owner = {"id": args.get("owner_id")}
     elif args.get("owner_username"):
         owner = {"username": args.get("owner_username")}
-    else:   # not args.get("owner_id") and not args.get("owner_username")
+    else:  # not args.get("owner_id") and not args.get("owner_username")
         raise DemistoException("Either owner_id or owner_username should be provided.")
 
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.AssignAlert',
         'owner': owner,
         **args
@@ -563,18 +554,12 @@ def assign_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),  # type: ignore[arg-type]
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def add_responder_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.AddResponderAlert',
         **args
     }
@@ -583,13 +568,7 @@ def add_responder_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def get_escalations(client: Client, args: Dict[str, Any]) -> CommandResults:
@@ -611,7 +590,7 @@ def escalate_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     else:  # not args.get("owner_id") and not args.get("owner_username")
         raise DemistoException("Either escalation_id or escalation_name should be provided.")
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'escalation': escalation,
         'output_prefix': 'OpsGenie.EscalateAlert',
         **args
@@ -621,18 +600,12 @@ def escalate_alert(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),  # type: ignore[arg-type]
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def add_alert_tag(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.AddTagAlert',
         **args
     }
@@ -641,18 +614,12 @@ def add_alert_tag(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def remove_alert_tag(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': ALERTS_SUFFIX,
+        'request_type': ALERTS_SUFFIX,
         'output_prefix': 'OpsGenie.RemoveTagAlert',
         **args
     }
@@ -661,13 +628,7 @@ def remove_alert_tag(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def get_alert_attachments(client: Client, args: Dict[str, Any]) -> CommandResults:
@@ -714,7 +675,7 @@ def get_on_call(client: Client, args: Dict[str, Any]) -> CommandResults:
     else:  # not args.get("schedule_id") and not args.get("schedule_name")
         raise DemistoException("Either schedule_id or schedule_name should be provided.")
     on_call_args = {
-        'request_type_suffix': SCHEDULE_SUFFIX,
+        'request_type': SCHEDULE_SUFFIX,
         'scheduleIdentifierType': schedule_identifier_type,
         'schedule': schedule,
         **args
@@ -731,7 +692,7 @@ def get_on_call(client: Client, args: Dict[str, Any]) -> CommandResults:
 
 def create_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.Incident',
         **args
     }
@@ -740,18 +701,12 @@ def create_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def delete_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.DeletedIncident',
         **args
     }
@@ -760,13 +715,7 @@ def delete_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def get_incidents(client: Client, args: Dict[str, Any]) -> CommandResults:
@@ -801,7 +750,7 @@ def list_incidents(client: Client, args: Dict[str, Any]) -> CommandResults:
 
 def close_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.ClosedIncident',
         **args
     }
@@ -810,18 +759,12 @@ def close_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def resolve_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.ResolvedIncident',
         **args
     }
@@ -830,18 +773,12 @@ def resolve_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def add_responder_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.AddResponderIncident',
         **args
     }
@@ -850,18 +787,12 @@ def add_responder_incident(client: Client, args: Dict[str, Any]) -> CommandResul
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def add_tag_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.AddTagIncident',
         **args
     }
@@ -870,18 +801,12 @@ def add_tag_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
-    return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
-    )
+    return get_request_command(client, args)
 
 
 def remove_tag_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     args = {
-        'request_type_suffix': INCIDENTS_SUFFIX,
+        'request_type': INCIDENTS_SUFFIX,
         'output_prefix': 'OpsGenie.RemoveTagIncident',
         **args
     }
@@ -890,12 +815,45 @@ def remove_tag_incident(client: Client, args: Dict[str, Any]) -> CommandResults:
     if not request_id:
         raise ConnectionError(f"Failed to send request - {data}")
     args['request_id'] = request_id
-    results = client.get_request(args)
+    return get_request_command(client, args)
+
+
+def get_request_command(client: Client, args: Dict[str, Any]) -> CommandResults:
+    request_type = str(args.get('request_type'))
+    results: Response = client.get_request(args)
+
+    if results.status_code == 404:
+        ScheduledCommand.raise_error_if_not_supported()
+        request_id = args.get('request_id')
+        return CommandResults(
+            raw_response=results,
+            readable_output=None if args.get('polled_once') else f"Waiting for request_id={request_id}",
+            outputs_prefix=args.get("output_prefix", "OpsGenie.Request"),
+            outputs=None if args.get('polled_once') else {"requestId": request_id},
+            scheduled_command=ScheduledCommand(command='opsgenie-get-request',
+                                               next_run_in_seconds=int(
+                                                   args.get('interval_in_seconds', DEFAULT_POLL_INTERVAL)),
+                                               args={**args, 'polled_once': True},
+                                               timeout_in_seconds=int(
+                                                   args.get('timeout_in_seconds', DEFAULT_POLL_TIMEOUT))))
+    else:
+        results_dict = results.json()
+        return CommandResults(
+            outputs_prefix=args.get("output_prefix", f'OpsGenie.{request_type.capitalize()[:-1]}'),
+            outputs=results_dict.get("data"),
+            readable_output=tableToMarkdown("OpsGenie", results_dict.get('data')),
+            raw_response=results_dict
+        )
+
+
+def invite_user(client, args) -> CommandResults:
+    args['role'] = {'name': args.get('role')}
+    result = client.invite_user(args)
     return CommandResults(
-        outputs_prefix=args.get("output_prefix", "OpsGenie"),
-        outputs=results.get("data"),
-        readable_output=tableToMarkdown("OpsGenie", results.get('data')),
-        raw_response=results
+        outputs_prefix="OpsGenie.Users",
+        outputs=result.get("data"),
+        readable_output=tableToMarkdown("OpsGenie Users", result.get("data")),
+        raw_response=result
     )
 
 
@@ -910,7 +868,9 @@ def get_teams(client: Client, args: Dict[str, Any]) -> CommandResults:
 
 
 def _parse_fetch_time(fetch_time: str):
-    return dateparser.parse(date_string=f"{fetch_time} UTC").strftime(DATE_FORMAT)
+    fetch_time_date = dateparser.parse(date_string=f"{fetch_time} UTC")
+    assert fetch_time_date is not None, f'could not parse {fetch_time} UTC'
+    return fetch_time_date.strftime(DATE_FORMAT)
 
 
 def fetch_incidents_by_type(client: Client,
@@ -934,7 +894,9 @@ def fetch_incidents_by_type(client: Client,
     else:
         timestamp_now = int(now.timestamp())
         last_run = last_run_dict.get('lastRun')
-        timestamp_last_run = int(dateparser.parse(last_run).timestamp())
+        last_run_date = dateparser.parse(last_run)  # type: ignore
+        assert last_run_date is not None, f'could not parse {last_run}'
+        timestamp_last_run = int(last_run_date.timestamp())
         time_query = f'createdAt>{timestamp_last_run} AND createdAt<={timestamp_now}'
         params['query'] = f'{query} AND {time_query}' if query else f'{time_query}'
         params['limit'] = limit
@@ -1045,6 +1007,7 @@ def main() -> None:
 
         commands = {
             'opsgenie-create-alert': create_alert,
+            'opsgenie-invite-user': invite_user,
             'opsgenie-get-alerts': get_alerts,
             'opsgenie-delete-alert': delete_alert,
             'opsgenie-ack-alert': ack_alert,
@@ -1068,6 +1031,7 @@ def main() -> None:
             'opsgenie-add-tag-incident': add_tag_incident,
             'opsgenie-remove-tag-incident': remove_tag_incident,
             'opsgenie-get-teams': get_teams,
+            'opsgenie-get-request': get_request_command
         }
         command = demisto.command()
         if command == 'test-module':

@@ -4,9 +4,10 @@ from CommonServerUserPython import *
 import requests
 from collections import defaultdict
 from requests.auth import HTTPBasicAuth
+import urllib3
 
 # disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 '''GLOBAL VARS'''
 BASE_URL = demisto.params().get('url')
@@ -135,7 +136,14 @@ def format_results(res_json):
         if 'isp' in traits:
             hr['ISP'] = traits['isp']
             maxmind_ec['ISP'] = traits['isp']
-    return hr, ip_ec, maxmind_ec
+    dbot_score = {
+        'Indicator': ip_ec.get('Address'),
+        'Type': 'ip',
+        'Vendor': 'MaxMind_GeoIP2',
+        'Score': 0,
+        'Reliability': demisto.params().get('integrationReliability')
+    }
+    return hr, ip_ec, maxmind_ec, dbot_score
 
 
 ''' FUNCTIONS '''
@@ -150,10 +158,11 @@ def get_geo_ip(query):
 def geo_ip_command():
     ip_query = demisto.args().get('ip')
     res_json = get_geo_ip(ip_query)
-    hr, ip_ec, maxmind_ec = format_results(res_json)
+    hr, ip_ec, maxmind_ec, dbot_score = format_results(res_json)
     ec = ({
         'IP(val.Address && val.Address == obj.Address)': ip_ec,
-        'MaxMind(val.Address && val.Address == obj.Address)': maxmind_ec
+        'MaxMind(val.Address && val.Address == obj.Address)': maxmind_ec,
+        'DBotScore': dbot_score
     })
     demisto.results({
         'Type': entryTypes['note'],

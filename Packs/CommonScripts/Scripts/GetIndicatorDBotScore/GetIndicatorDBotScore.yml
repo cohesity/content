@@ -9,7 +9,6 @@ comment: Add into the incident's context the system internal DBot score for the 
 commonfields:
   id: GetIndicatorDBotScore
   version: -1
-enabled: false
 name: GetIndicatorDBotScore
 outputs:
 - contextPath: DBotScore.Indicator
@@ -36,4 +35,4 @@ runonce: false
 fromversion: 5.0.0
 tests:
 - GetIndicatorDBotScore Test
-dockerimage: demisto/python3:3.9.8.24399
+dockerimage: demisto/python3:3.10.6.33415

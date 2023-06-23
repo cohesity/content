@@ -1,12 +1,12 @@
-from typing import List, Dict
 
 from taxii2client.common import TokenAuth
 from taxii2client.v20 import Server, as_pages
 
 from CommonServerPython import *
+import urllib3
 
 # disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 UNIT42_TYPES_TO_DEMISTO_TYPES = {
     'ipv4-addr': FeedIndicatorType.IP,
@@ -67,8 +67,13 @@ class Client(BaseClient):
         self._api_key = api_key
         self._proxies = handle_proxy()
         self.objects_data = {}
+        self.server = Server(
+            url=self._base_url, auth=TokenAuth(key=self._api_key), verify=self._verify, proxies=self._proxies
+        )
 
-    def get_stix_objects(self, test: bool = False, items_types: list = []):
+    def get_stix_objects(self, test: bool = False, items_types: Optional[list] = None):
+        if not items_types:
+            items_types = []
         for type_ in items_types:
             self.fetch_stix_objects_from_api(test, type=type_)
 
@@ -79,15 +84,11 @@ class Client(BaseClient):
             test: Whether it was called during clicking the test button or not - designed to save time.
             limit: number of indicators for get command
         """
-        data = []
-
-        server = Server(url=self._base_url, auth=TokenAuth(key=self._api_key), verify=self._verify,
-                        proxies=self._proxies)
-
-        for api_root in server.api_roots:
+        data: list = []
+        for api_root in self.server.api_roots:
             for collection in api_root.collections:
                 for bundle in as_pages(collection.get_objects, per_request=100, **kwargs):
-                    data.extend(bundle.get('objects'))
+                    data.extend(bundle.get('objects') or [])
                     if test and limit < len(data):
                         return data
 
@@ -96,20 +97,18 @@ class Client(BaseClient):
         self.objects_data[kwargs.get('type')] = data
 
 
-def get_ioc_value_from_ioc_name(ioc_obj):
+def extract_ioc_value(value: str):
     """
     Extract SHA-256 from string:
     ([file:name = 'blabla' OR file:name = 'blabla'] AND [file:hashes.'SHA-256' = '1111'])" -> 1111
     """
-    ioc_value = ioc_obj.get('name')
     try:
-        ioc_value = re.search("(?<='SHA-256' = ').*?(?=')", ioc_value).group(0)  # type:ignore # guardrails-disable-line
+        return re.search("(?<='SHA-256' = ').*?(?=')", value).group(0)  # type:ignore # guardrails-disable-line
     except AttributeError:
-        ioc_value = None
-    return ioc_value
+        return None
 
 
-def parse_indicators(indicator_objects: list, feed_tags: list = [], tlp_color: Optional[str] = None) -> list:
+def parse_indicators(indicator_objects: list, feed_tags: Optional[list] = None, tlp_color: Optional[str] = None) -> list:
     """Parse the IOC objects retrieved from the feed.
     Args:
       indicator_objects: a list of objects containing the indicators.
@@ -118,28 +117,32 @@ def parse_indicators(indicator_objects: list, feed_tags: list = [], tlp_color: O
     Returns:
         A list of processed indicators.
     """
+    if not feed_tags:
+        feed_tags = []
+
     indicators = []
     if indicator_objects:
         for indicator_object in indicator_objects:
-            pattern = indicator_object.get('pattern')
+            pattern = indicator_object.get('pattern') or ''
             for key in UNIT42_TYPES_TO_DEMISTO_TYPES.keys():
                 if pattern.startswith(f'[{key}'):  # retrieve only Demisto indicator types
                     indicator_obj = {
-                        "value": indicator_object.get('name'),
-                        "type": UNIT42_TYPES_TO_DEMISTO_TYPES[key],
+                        "value": indicator_object.get('name', ''),
+                        "type": UNIT42_TYPES_TO_DEMISTO_TYPES.get(key),
+                        "score": ThreatIntel.ObjectsScore.MALWARE,  # default verdict of fetched indicators is malicious
                         "rawJSON": indicator_object,
                         "fields": {
                             "firstseenbysource": indicator_object.get('created'),
                             "indicatoridentification": indicator_object.get('id'),
-                            "tags": list((set(indicator_object.get('labels'))).union(set(feed_tags))),
+                            "tags": list((set(indicator_object.get('labels') or [])).union(set(feed_tags))),
                             "modified": indicator_object.get('modified'),
                             "reportedby": 'Unit42',
                         }
                     }
 
                     if "file:hashes.'SHA-256' = '" in indicator_obj['value']:
-                        if get_ioc_value_from_ioc_name(indicator_object):
-                            indicator_obj['value'] = get_ioc_value_from_ioc_name(indicator_object)
+                        if ioc_value := extract_ioc_value(indicator_obj['value']):
+                            indicator_obj['value'] = ioc_value
 
                     if tlp_color:
                         indicator_obj['fields']['trafficlightprotocol'] = tlp_color
@@ -177,8 +180,8 @@ def is_sub_report(report_obj):
     return True
 
 
-def parse_reports_and_report_relationships(report_objects: list, feed_tags: list = [],
-                                           tlp_color: Optional[str] = None, id_to_object={}):
+def parse_reports_and_report_relationships(report_objects: list, feed_tags: Optional[list] = None,
+                                           tlp_color: Optional[str] = None, id_to_object: Optional[dict] = None):
     """Parse the Reports objects retrieved from the feed.
 
     Args:
@@ -190,6 +193,12 @@ def parse_reports_and_report_relationships(report_objects: list, feed_tags: list
     Returns:
         A list of processed reports.
     """
+    if not feed_tags:
+        feed_tags = []
+
+    if not id_to_object:
+        id_to_object = {}
+
     reports = []
 
     for report_object in report_objects:
@@ -207,7 +216,7 @@ def parse_reports_and_report_relationships(report_objects: list, feed_tags: list
             'published': report_object.get('published'),
             'description': report_object.get('description', ''),
             "reportedby": 'Unit42',
-            "tags": list((set(report_object.get('labels'))).union(set(feed_tags))),
+            "tags": list((set(report_object.get('labels') or [])).union(set(feed_tags))),
         }
         if tlp_color:
             report['fields']['trafficlightprotocol'] = tlp_color
@@ -311,7 +320,11 @@ def get_attack_id_and_value_from_name(attack_indicator):
     indicator value = 'Redundant Access'.
     """
     ind_name = attack_indicator.get('name')
-    idx = ind_name.index(':')
+    separator = ':'
+    try:
+        idx = ind_name.index(separator)
+    except ValueError:
+        raise DemistoException(f"Failed parsing attack indicator {ind_name}")
     ind_id = ind_name[:idx]
     value = ind_name[idx + 2:]
 
@@ -478,7 +491,7 @@ def get_ioc_type(indicator, id_to_object):
 
 def get_ioc_value(ioc, id_to_obj):
     """
-    Get IOC value from the indicator name field.
+    Get IOC value from either the indicator `name` or `pattern` fields.
 
     Args:
         ioc: the indicator to get information on.
@@ -489,16 +502,20 @@ def get_ioc_value(ioc, id_to_obj):
         if its attack pattern remove the id from the name.
     """
     ioc_obj = id_to_obj.get(ioc)
-    if ioc_obj:
-        if ioc_obj.get('type') == 'report':
-            return f"[Unit42 ATOM] {ioc_obj.get('name')}"
-        elif ioc_obj.get('type') == 'attack-pattern':
-            _, value = get_attack_id_and_value_from_name(ioc_obj)
-            return value
-        elif "file:hashes.'SHA-256' = '" in ioc_obj.get('name'):
-            return get_ioc_value_from_ioc_name(ioc_obj)
-        else:
-            return ioc_obj.get('name')
+    if not ioc_obj:
+        return
+
+    if ioc_obj.get('type') == 'report':
+        return f"[Unit42 ATOM] {ioc_obj.get('name')}"
+
+    elif ioc_obj.get('type') == 'attack-pattern':
+        return get_attack_id_and_value_from_name(ioc_obj)[1]
+
+    for key in ('name', 'pattern'):
+        if ioc_value := extract_ioc_value(ioc_obj.get(key, '')):
+            return ioc_value
+
+    return ioc_obj.get('name')
 
 
 def create_list_relationships(relationships_objects, id_to_object):
@@ -570,7 +587,7 @@ def test_module(client: Client) -> str:
     return 'ok'
 
 
-def fetch_indicators(client: Client, feed_tags: list = [], tlp_color: Optional[str] = None,
+def fetch_indicators(client: Client, feed_tags: Optional[list] = None, tlp_color: Optional[str] = None,
                      create_relationships=False) -> List[Dict]:
     """Retrieves indicators from the feed
 
@@ -582,6 +599,9 @@ def fetch_indicators(client: Client, feed_tags: list = [], tlp_color: Optional[s
     Returns:
         List. Processed indicators from feed.
     """
+    if not feed_tags:
+        feed_tags = []
+
     item_types_to_fetch_from_api = ['report', 'indicator', 'malware', 'campaign', 'attack-pattern', 'relationship',
                                     'course-of-action', 'intrusion-set']
     client.get_stix_objects(items_types=item_types_to_fetch_from_api)
@@ -634,7 +654,7 @@ def fetch_indicators(client: Client, feed_tags: list = [], tlp_color: Optional[s
     return ioc_indicators + reports + campaigns + attack_patterns + course_of_actions + intrusion_sets
 
 
-def get_indicators_command(client: Client, args: Dict[str, str], feed_tags: list = [],
+def get_indicators_command(client: Client, args: Dict[str, str], feed_tags: Optional[list] = None,
                            tlp_color: Optional[str] = None) -> CommandResults:
     """Wrapper for retrieving indicators from the feed to the war-room.
 
@@ -646,11 +666,19 @@ def get_indicators_command(client: Client, args: Dict[str, str], feed_tags: list
     Returns:
         Demisto Outputs.
     """
-    limit = int(args.get('limit', '10'))
+    is_version_over_6_2 = is_demisto_version_ge('6.2.0')
+    limit = arg_to_number(args.get('limit')) or 10
+    if not feed_tags:
+        feed_tags = []
 
-    indicators = client.fetch_stix_objects_from_api(test=True, type='indicator', limit=limit)
+    ind_type = args.get('indicators_type')
 
-    indicators = parse_indicators(indicators, feed_tags, tlp_color)
+    indicators = client.fetch_stix_objects_from_api(test=True, type=ind_type, limit=limit)
+
+    if ind_type == 'indicator':
+        indicators = parse_indicators(indicators, feed_tags, tlp_color)
+    else:
+        indicators = create_attack_pattern_indicator(indicators, feed_tags, tlp_color, is_version_over_6_2)
     limited_indicators = indicators[:limit]
 
     readable_output = tableToMarkdown('Unit42 Indicators:', t=limited_indicators, headers=['type', 'value', 'fields'])
@@ -666,13 +694,13 @@ def get_indicators_command(client: Client, args: Dict[str, str], feed_tags: list
     return command_results
 
 
-def main():
+def main():  # pragma: no cover
     """
     PARSE AND VALIDATE FEED PARAMS
     """
     params = demisto.params()
     args = demisto.args()
-    api_key = str(params.get('api_key', ''))
+    api_key = params.get('credentials', {}).get('password') or str(params.get('api_key', ''))
     verify = not params.get('insecure', False)
     feed_tags = argToList(params.get('feedTags'))
     tlp_color = params.get('tlp_color')
@@ -691,14 +719,23 @@ def main():
         elif command == 'fetch-indicators':
             indicators = fetch_indicators(client, feed_tags, tlp_color, create_relationships)
             for iter_ in batch(indicators, batch_size=2000):
-                demisto.createIndicators(iter_)
+                try:
+                    demisto.createIndicators(iter_)
+                except Exception:
+                    # find problematic indicator
+                    for indicator in iter_:
+                        try:
+                            demisto.createIndicators([indicator])
+                        except Exception as err:
+                            demisto.debug(f'createIndicators Error: failed to create the following indicator:'
+                                          f' {indicator}\n {err}')
+                    raise
 
         elif command == 'unit42-get-indicators':
             return_results(get_indicators_command(client, args, feed_tags, tlp_color))
 
     except Exception as err:
-        demisto.error(traceback.format_exc())  # print the traceback
-        return_error(err)
+        return_error(str(err))
 
 
 if __name__ in ('__main__', '__builtin__', 'builtins'):

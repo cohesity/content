@@ -1,5 +1,6 @@
 import functools
 import uuid
+import json
 from typing import Callable
 from flask import Flask, request, make_response, jsonify, Response
 from urllib.parse import ParseResult, urlparse
@@ -15,7 +16,7 @@ HTTP_200_OK = 200
 HTTP_400_BAD_REQUEST = 400
 HTTP_401_UNAUTHORIZED = 401
 HTTP_404_NOT_FOUND = 404
-HTTP_406_NOT_ACCEPABLE = 406
+HTTP_406_NOT_ACCEPTABLE = 406
 HTTP_416_RANGE_NOT_SATISFIABLE = 416
 INTEGRATION_NAME: str = 'TAXII2 Server'
 API_ROOT = 'threatintel'
@@ -27,12 +28,12 @@ MEDIA_TYPE_TAXII_V21 = 'application/taxii+json;version=2.1'
 MEDIA_TYPE_STIX_V21 = 'application/stix+json;version=2.1'
 MEDIA_TYPE_TAXII_V20 = 'application/vnd.oasis.taxii+json; version=2.0'
 MEDIA_TYPE_STIX_V20 = 'application/vnd.oasis.stix+json; version=2.0'
-ACCEPT_TYPE_ALL = '*/*'
 TAXII_VER_2_0 = '2.0'
 TAXII_VER_2_1 = '2.1'
 PAWN_UUID = uuid.uuid5(uuid.NAMESPACE_URL, 'https://www.paloaltonetworks.com')
 SCO_DET_ID_NAMESPACE = uuid.UUID('00abedb4-aa42-466c-9c01-fed23315a9b7')
 STIX_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
+UTC_DATE_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 TAXII_V20_CONTENT_LEN = 9765625
 TAXII_V21_CONTENT_LEN = 104857600
 TAXII_REQUIRED_FILTER_FIELDS = {'name', 'type', 'modified', 'createdTime', 'description',
@@ -51,6 +52,8 @@ XSOAR_TYPES_TO_STIX_SCO = {
     FeedIndicatorType.Registry: 'windows-registry-key',
     FeedIndicatorType.File: 'file',
     FeedIndicatorType.URL: 'url',
+    FeedIndicatorType.Software: 'software',
+    FeedIndicatorType.AS: 'asn',
 }
 
 XSOAR_TYPES_TO_STIX_SDO = {
@@ -58,7 +61,7 @@ XSOAR_TYPES_TO_STIX_SDO = {
     ThreatIntel.ObjectsNames.CAMPAIGN: 'campaign',
     ThreatIntel.ObjectsNames.COURSE_OF_ACTION: 'course-of-action',
     ThreatIntel.ObjectsNames.INFRASTRUCTURE: 'infrastructure',
-    ThreatIntel.ObjectsNames.INTRUSION_SET: 'instruction-set',
+    ThreatIntel.ObjectsNames.INTRUSION_SET: 'intrusion-set',
     ThreatIntel.ObjectsNames.REPORT: 'report',
     ThreatIntel.ObjectsNames.THREAT_ACTOR: 'threat-actor',
     ThreatIntel.ObjectsNames.TOOL: 'tool',
@@ -66,7 +69,7 @@ XSOAR_TYPES_TO_STIX_SDO = {
     FeedIndicatorType.CVE: 'vulnerability',
 }
 
-STIX2_TYPES_TO_XSOAR = {
+STIX2_TYPES_TO_XSOAR: dict[str, Union[str, tuple[str, ...]]] = {
     'campaign': ThreatIntel.ObjectsNames.CAMPAIGN,
     'attack-pattern': ThreatIntel.ObjectsNames.ATTACK_PATTERN,
     'report': ThreatIntel.ObjectsNames.REPORT,
@@ -79,13 +82,26 @@ STIX2_TYPES_TO_XSOAR = {
     'vulnerability': FeedIndicatorType.CVE,
     'ipv4-addr': FeedIndicatorType.IP,
     'ipv6-addr': FeedIndicatorType.IPv6,
-    'domain-name': [FeedIndicatorType.DomainGlob, FeedIndicatorType.Domain],
+    'domain-name': (FeedIndicatorType.DomainGlob, FeedIndicatorType.Domain),
     'user-account': FeedIndicatorType.Account,
     'email-addr': FeedIndicatorType.Email,
     'url': FeedIndicatorType.URL,
     'file': FeedIndicatorType.File,
     'windows-registry-key': FeedIndicatorType.Registry,
+    'indicator': (FeedIndicatorType.IP, FeedIndicatorType.IPv6, FeedIndicatorType.DomainGlob,
+                  FeedIndicatorType.Domain, FeedIndicatorType.Account, FeedIndicatorType.Email,
+                  FeedIndicatorType.URL, FeedIndicatorType.File, FeedIndicatorType.Registry),
+    'software': FeedIndicatorType.Software,
+    'asn': FeedIndicatorType.AS,
 }
+
+HASH_TYPE_TO_STIX_HASH_TYPE = {
+    'md5': 'MD5',
+    'sha1': 'SHA-1',
+    'sha256': 'SHA-256',
+    'sha512': 'SHA-512',
+}
+
 
 ''' TAXII2 Server '''
 
@@ -93,7 +109,7 @@ STIX2_TYPES_TO_XSOAR = {
 class TAXII2Server:
     def __init__(self, url_scheme: str, host: str, port: int, collections: dict, certificate: str, private_key: str,
                  http_server: bool, credentials: dict, version: str, service_address: Optional[str] = None,
-                 fields_to_present: Optional[set] = None):
+                 fields_to_present: Optional[set] = None, types_for_indicator_sdo: Optional[list] = None):
         """
         Class for a TAXII2 Server configuration.
         Args:
@@ -107,6 +123,7 @@ class TAXII2Server:
             credentials: The user credentials.
             version: API version.
             fields_to_present: indicator fields to return in the request.
+            types_for_indicator_sdo: The list of stix types to provide indicator stix domain objects.
         """
         self._url_scheme = url_scheme
         self._host = host
@@ -121,13 +138,14 @@ class TAXII2Server:
         if credentials and (identifier := credentials.get('identifier')) and (password := credentials.get('password')):
             self._auth = (identifier, password)
         self.version = version
-        if not (version == TAXII_VER_2_0 or version == TAXII_VER_2_1):
+        if version not in [TAXII_VER_2_0, TAXII_VER_2_1]:
             raise Exception(f'Wrong TAXII 2 Server version: {version}. '
                             f'Possible values: {TAXII_VER_2_0}, {TAXII_VER_2_1}.')
         self._collections_resource: list = []
         self.collections_by_id: dict = dict()
         self.namespace_uuid = uuid.uuid5(PAWN_UUID, demisto.getLicenseID())
         self.create_collections(collections)
+        self.types_for_indicator_sdo = types_for_indicator_sdo or []
 
     @property
     def taxii_collections_media_type(self):
@@ -196,17 +214,16 @@ class TAXII2Server:
         self._collections_resource = collections_resource
         self.collections_by_id = collections_by_id
 
-    def get_discovery_service(self) -> dict:
+    def get_discovery_service(self, instance_execute=False) -> dict:
         """
         Handle discovery request.
 
         Returns:
             The discovery response.
         """
-        request_headers = request.headers
         if self._service_address:
             service_address = self._service_address
-        elif request_headers and '/instance/execute' in request_headers.get('X-Request-URI', ''):
+        elif instance_execute or (request.headers and '/instance/execute' in request.headers.get('X-Request-URI', '')):
             # if the server rerouting is used, then the X-Request-URI header is added to the request by the server
             # and we should use the /instance/execute endpoint in the address
             self._url_scheme = 'https'
@@ -328,8 +345,8 @@ class TAXII2Server:
         objects = limited_iocs
 
         if SERVER.has_extension:
-            limited_extensions = extensions[offset:offset + limit]
-            objects = [val for pair in zip(limited_iocs, limited_extensions) for val in pair]
+            limited_extensions = get_limited_extensions(limited_iocs, extensions)
+            objects.extend(limited_extensions)
 
         if limited_iocs:
             first_added = limited_iocs[-1].get('created')
@@ -360,14 +377,46 @@ SERVER: TAXII2Server = None  # type: ignore[assignment]
 ''' HELPER FUNCTIONS '''
 
 
+def get_limited_extensions(limited_iocs, extensions):
+    """
+    Args:
+        limited_iocs: List of the limited iocs.
+        extensions: List of all the generated extensions to limit.
+
+    Returns: List of the limited extensions related to the limited iocs.
+    """
+    limited_extensions = []
+    required_extensions_ids = []
+    for ioc in limited_iocs:
+        required_extensions_ids.extend(list(ioc.get('extensions', {}).keys()))
+    for extension in extensions:
+        if extension.get('id') in required_extensions_ids:
+            limited_extensions.append(extension)
+    return limited_extensions
+
+
+def remove_spaces_from_header(header: str | list) -> str | list:
+    """ Remove spaces from a header or list of headers.
+
+    Args:
+        header (str | list): A single header or a list of headers to remove spaces from.
+
+    Returns:
+        str | list: The header or list of headers without spaces.
+    """
+    if isinstance(header, list):
+        return [value.replace(' ', '') for value in header]
+    return header.replace(' ', '')
+
+
 def taxii_validate_request_headers(f: Callable) -> Callable:
     @functools.wraps(f)
     def validate_request_headers(*args, **kwargs):
         """
         function for HTTP requests to validate authentication and Accept headers.
         """
-        accept_headers = [MEDIA_TYPE_TAXII_ANY, MEDIA_TYPE_TAXII_V20, MEDIA_TYPE_TAXII_V21,
-                          MEDIA_TYPE_STIX_V20, ACCEPT_TYPE_ALL]
+        accept_headers = [MEDIA_TYPE_TAXII_ANY, MEDIA_TYPE_TAXII_V20,
+                          MEDIA_TYPE_STIX_V20, MEDIA_TYPE_TAXII_V21, MEDIA_TYPE_STIX_V21]
         credentials = request.authorization
 
         if SERVER.auth:
@@ -383,12 +432,28 @@ def taxii_validate_request_headers(f: Callable) -> Callable:
                 return handle_response(HTTP_401_UNAUTHORIZED, {'title': 'Authorization failed'})
 
         request_headers = request.headers
-        if (accept_header := request_headers.get('Accept')) not in accept_headers:
-            return handle_response(HTTP_406_NOT_ACCEPABLE,
+
+        # v2.0 headers has a space while v2.1 does not,
+        # this caused confusion with platforms sometimes sending a header with or without space.
+        # to avoid issues the Accept header is stripped from the spaces before validation.
+        accept_header = request_headers.get('Accept')
+
+        if (not accept_header) or (remove_spaces_from_header(accept_header) not in remove_spaces_from_header(accept_headers)):
+            return handle_response(HTTP_406_NOT_ACCEPTABLE,
                                    {'title': 'Invalid TAXII Headers',
                                     'description': f'Invalid Accept header: {accept_header}, '
                                                    f'please use one ot the following Accept headers: '
                                                    f'{accept_headers}'})
+
+        possible_v20_headers = [MEDIA_TYPE_TAXII_V20, MEDIA_TYPE_STIX_V20] + list(remove_spaces_from_header([MEDIA_TYPE_TAXII_V20,
+                                                                                                            MEDIA_TYPE_STIX_V20]))
+        if SERVER.version == TAXII_VER_2_1 and accept_header in possible_v20_headers:
+            return handle_response(HTTP_406_NOT_ACCEPTABLE, {
+                'title': 'Invalid TAXII Header',
+                'description': 'The media type (version=2.0) provided in the Accept header'
+                               ' is not supported on TAXII v2.1.'
+            })
+
         return f(*args, **kwargs)
 
     return validate_request_headers
@@ -482,7 +547,7 @@ def handle_response(status_code: int, content: dict, date_added_first: str = Non
     return make_response(jsonify(content), status_code, headers)
 
 
-def create_query(query: str, types: list) -> str:
+def create_query(query: str, types: list[str]) -> str:
     """
     Args:
         query: collections query
@@ -493,23 +558,19 @@ def create_query(query: str, types: list) -> str:
     """
     new_query = ''
     if types:
+        demisto.debug(f'raw query: {query}')
         xsoar_types: list = []
-        if 'domain-name' in types:
-            xsoar_types.extend(STIX2_TYPES_TO_XSOAR['domain-name'])
         for t in types:
-            if t != 'domain-name':
-                try:
-                    xsoar_type = STIX2_TYPES_TO_XSOAR[t]
-                except KeyError:
-                    xsoar_type = t
-                xsoar_types.append(xsoar_type)
+            xsoar_type = STIX2_TYPES_TO_XSOAR.get(t, t)
+            xsoar_types.extend(xsoar_type if isinstance(xsoar_type, tuple) else (xsoar_type,))
 
         if query.strip():
-            new_query = f'({query}) '
+            new_query = f'({query})'
 
-        new_query += ' or '.join([f'type:"{x}"' for x in xsoar_types])
+        if or_part := (' or '.join(f'type:"{x}"' for x in xsoar_types)):
+            new_query += f' and ({or_part})'
 
-        demisto.debug(f'new query: {new_query}')
+        demisto.debug(f'modified query, after adding types: {new_query}')
         return new_query
     else:
         return query
@@ -531,6 +592,7 @@ def find_indicators(query: str, types: list, added_after, limit: int, offset: in
     new_limit = offset + limit
     iocs = []
     extensions = []
+
     if is_manifest:
         field_filters: Optional[str] = ','.join(TAXII_REQUIRED_FILTER_FIELDS)
     elif SERVER.fields_to_present:
@@ -546,11 +608,12 @@ def find_indicators(query: str, types: list, added_after, limit: int, offset: in
         query=new_query,
         limit=new_limit,
         size=PAGE_SIZE,
-        from_date=added_after
+        from_date=added_after,
+        sort=[{"field": "modified", "asc": True}],
     )
 
     total = 0
-
+    extensions_dict: dict = {}
     for ioc in indicator_searcher:
         found_indicators = ioc.get('iocs') or []
         total = ioc.get('total')
@@ -561,13 +624,20 @@ def find_indicators(query: str, types: list, added_after, limit: int, offset: in
                 if manifest_entry:
                     iocs.append(manifest_entry)
             else:
-                stix_ioc, extension_definition = create_stix_object(xsoar_indicator, xsoar_type)
+                stix_ioc, extension_definition, extensions_dict = create_stix_object(xsoar_indicator, xsoar_type, extensions_dict)
+                if XSOAR_TYPES_TO_STIX_SCO.get(xsoar_type) in SERVER.types_for_indicator_sdo:
+                    stix_ioc = convert_sco_to_indicator_sdo(stix_ioc, xsoar_indicator)
                 if SERVER.has_extension and stix_ioc:
                     iocs.append(stix_ioc)
-                    extensions.append(extension_definition)
+                    if extension_definition:
+                        extensions.append(extension_definition)
                 elif stix_ioc:
                     iocs.append(stix_ioc)
-
+    if not is_manifest and iocs and is_demisto_version_ge('6.6.0'):
+        if relationships := create_relationships_objects(iocs, extensions):
+            total += len(relationships)
+            iocs.extend(relationships)
+            iocs = sorted(iocs, key=lambda k: k['modified'])
     return iocs, extensions, total
 
 
@@ -648,16 +718,78 @@ def create_manifest_entry(xsoar_indicator: dict, xsoar_type: str) -> dict:
     return entry
 
 
-def create_stix_object(xsoar_indicator: dict, xsoar_type: str) -> tuple:
+def convert_sco_to_indicator_sdo(stix_object: dict, xsoar_indicator: dict) -> dict:
+    """
+    Create a STIX domain object of 'indicator' type from a STIX Cyber Observable Objects.
+
+    Args:
+        stix_object: The STIX Cyber Observable Object
+        xsoar_indicator: The stix object entry from which the 'stix_object' has been created.
+
+    Returns:
+        Stix indicator domain object for given indicator. Format described here:
+        https://docs.oasis-open.org/cti/stix/v2.1/cs01/stix-v2.1-cs01.html#_muftrcpnf89v
+    """
+    try:
+        expiration_parsed = parse(xsoar_indicator.get('expiration')).strftime(STIX_DATE_FORMAT)  # type: ignore[arg-type]
+    except Exception:
+        expiration_parsed = ''
+
+    indicator_value = xsoar_indicator.get('value')
+    if isinstance(indicator_value, str):
+        indicator_pattern_value: Any = indicator_value.replace("'", "\\'")
+    else:
+        indicator_pattern_value = json.dumps(indicator_value)
+
+    object_type = stix_object['type']
+    stix_type = 'indicator'
+
+    pattern = ''
+    if object_type == 'file':
+        hash_type = HASH_TYPE_TO_STIX_HASH_TYPE.get(get_hash_type(indicator_value), 'Unknown')
+        pattern = f"[file:hashes.'{hash_type}' = '{indicator_pattern_value}']"
+    else:
+        pattern = f"[{object_type}:value = '{indicator_pattern_value}']"
+
+    labels = get_labels_for_indicator(xsoar_indicator.get('score'))
+
+    stix_domain_object: Dict[str, Any] = assign_params(
+        type=stix_type,
+        id=create_sdo_stix_uuid(xsoar_indicator, stix_type),
+        pattern=pattern,
+        valid_from=stix_object['created'],
+        valid_until=expiration_parsed,
+        description=xsoar_indicator.get('CustomFields', {}).get('description', ''),
+        pattern_type='stix',
+        labels=labels
+    )
+    return dict({k: v for k, v in stix_object.items()
+                 if k in ('spec_version', 'created', 'modified')}, **stix_domain_object)
+
+
+def get_labels_for_indicator(score):
+    """Get indicator label based on the DBot score"""
+    if int(score) == 0:
+        return ['']
+    elif int(score) == 1:
+        return ['benign']
+    elif int(score) == 2:
+        return ['anomalous-activity']
+    elif int(score) == 3:
+        return ['malicious-activity']
+
+
+def create_stix_object(xsoar_indicator: dict, xsoar_type: str, extensions_dict: dict = {}) -> tuple:
     """
 
     Args:
         xsoar_indicator: to create stix object entry from
         xsoar_type: type of indicator in xsoar system
-
+        extensions_dict: dict contains all object types that already have their extension defined
     Returns:
         Stix object entry for given indicator, and extension. Format described here:
         (https://docs.google.com/document/d/1wE2JibMyPap9Lm5-ABjAZ02g098KIxlNQ7lMMFkQq44/edit#heading=h.naoy41lsrgt0)
+        extensions_dict: dict contains all object types that already have their extension defined
     """
     is_sdo = False
     if stix_type := XSOAR_TYPES_TO_STIX_SCO.get(xsoar_type):
@@ -688,7 +820,7 @@ def create_stix_object(xsoar_indicator: dict, xsoar_type: str) -> tuple:
     if is_sdo:
         stix_object['name'] = xsoar_indicator.get('value')
     else:
-        stix_object['value'] = xsoar_indicator.get('value')
+        stix_object = build_sco_object(stix_object, xsoar_indicator)
 
     xsoar_indicator_to_return = dict()
 
@@ -704,11 +836,88 @@ def create_stix_object(xsoar_indicator: dict, xsoar_type: str) -> tuple:
         xsoar_indicator_to_return = xsoar_indicator
     extension_definition = {}
 
-    if SERVER.has_extension:
-        xsoar_indicator_to_return['extension_type'] = 'property_extension'
-        extention_id = f'extension-definition--{uuid.uuid4()}'
+    if SERVER.has_extension and object_type not in SERVER.types_for_indicator_sdo:
+        stix_object, extension_definition, extensions_dict = create_extension_definition(object_type, extensions_dict, xsoar_type,
+                                                                                         created_parsed, modified_parsed,
+                                                                                         stix_object, xsoar_indicator_to_return)
+
+    if is_sdo:
+        stix_object['description'] = xsoar_indicator.get('CustomFields', {}).get('description', "")
+    return stix_object, extension_definition, extensions_dict
+
+
+def build_sco_object(stix_object: Dict[str, Any], xsoar_indicator: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Builds a correct JSON object for specific SCO types
+
+    Args:
+        stix_object (Dict[str, Any]): A JSON object of a STIX indicator
+        xsoar_indicator (Dict[str, Any]): A JSON object of an XSOAR indicator
+
+    Returns:
+        Dict[str, Any]: A JSON object of a STIX indicator
+    """
+
+    custom_fields = xsoar_indicator.get('CustomFields', {})
+
+    if stix_object['type'] == 'asn':
+        stix_object['number'] = xsoar_indicator.get('value', '')
+        stix_object['name'] = custom_fields.get('name', '')
+
+    elif stix_object['type'] == 'file':
+        value = xsoar_indicator.get('value')
+        stix_object['hashes'] = {HASH_TYPE_TO_STIX_HASH_TYPE[get_hash_type(value)]: value}
+        for hash_type in ('md5', 'sha1', 'sha256', 'sha512'):
+            try:
+                stix_object['hashes'][HASH_TYPE_TO_STIX_HASH_TYPE[hash_type]] = custom_fields[hash_type]
+
+            except KeyError:
+                pass
+
+    elif stix_object['type'] == 'windows-registry-key':
+        stix_object['key'] = xsoar_indicator.get('value')
+        stix_object['values'] = []
+
+        for keyvalue in custom_fields['keyvalue']:
+            if keyvalue:
+                stix_object['values'].append(keyvalue)
+                stix_object['values'][-1]['data_type'] = stix_object['values'][-1]['type']
+                del stix_object['values'][-1]['type']
+            else:
+                pass
+
+    elif stix_object['type'] in ('mutex', 'software'):
+        stix_object['name'] = xsoar_indicator.get('value')
+
+    else:
+        stix_object['value'] = xsoar_indicator.get('value')
+
+    return stix_object
+
+
+def create_extension_definition(object_type, extensions_dict, xsoar_type,
+                                created_parsed, modified_parsed, stix_object, xsoar_indicator_to_return):
+    """
+    Args:
+        object_type: the type of the stix_object.
+        xsoar_type: type of indicator in xsoar system.
+        extensions_dict: dict contains all object types that already have their extension defined.
+        created_parsed: the stix object creation time.
+        modified_parsed: the stix object last modified time.
+        stix_object: Stix object entry.
+        xsoar_indicator_to_return: the xsoar indicator to return.
+
+    Create an extension definition and update the stix object and extensions dict accordingly.
+
+    Returns:
+        the updated Stix object, its extension and updated extensions_dict.
+    """
+    extension_definition = {}
+    xsoar_indicator_to_return['extension_type'] = 'property_extension'
+    extension_id = f'extension-definition--{uuid.uuid4()}'
+    if object_type not in extensions_dict:
         extension_definition = {
-            'id': extention_id,
+            'id': extension_id,
             'type': 'extension-definition',
             'spec_version': SERVER.version,
             'name': f'Cortex XSOAR TIM {xsoar_type}',
@@ -722,13 +931,11 @@ def create_stix_object(xsoar_indicator: dict, xsoar_type: str) -> tuple:
             'version': '1.0',
             'extension_types': ['property-extension']
         }
-        stix_object['extensions'] = {
-            extention_id: xsoar_indicator_to_return,
-        }
-
-    if is_sdo:
-        stix_object['description'] = xsoar_indicator.get('CustomFields', {}).get('description', "")
-    return stix_object, extension_definition
+        extensions_dict[object_type] = True
+    stix_object['extensions'] = {
+        extension_id: xsoar_indicator_to_return
+    }
+    return stix_object, extension_definition, extensions_dict
 
 
 def parse_content_range(content_range: str) -> tuple:
@@ -757,10 +964,11 @@ def parse_content_range(content_range: str) -> tuple:
     return offset, limit
 
 
-def get_collections(params: dict = demisto.params()) -> dict:
+def get_collections(params: Optional[dict] = None) -> dict:
     """
     Gets the indicator query collections from the integration parameters.
     """
+    params = params or demisto.params()
     collections_json: str = params.get('collections', '')
 
     try:
@@ -791,9 +999,12 @@ def parse_manifest_and_object_args() -> tuple:
 
     try:
         if added_after:
+            datetime.strptime(added_after, UTC_DATE_FORMAT)
+    except ValueError:
+        try:
             datetime.strptime(added_after, STIX_DATE_FORMAT)
-    except Exception as e:
-        raise Exception(f'Added after time format should be YYYY-MM-DDTHH:mm:ss.[s+]Z. {e}')
+        except Exception as e:
+            raise Exception(f'Added after time format should be YYYY-MM-DDTHH:mm:ss.[s+]Z. {e}')
 
     if SERVER.version == TAXII_VER_2_0:
         if content_range := request.headers.get('Content-Range'):
@@ -840,7 +1051,7 @@ def taxii2_server_discovery() -> Response:
     return handle_response(HTTP_200_OK, discovery_response)
 
 
-@APP.route('/<api_root>/', methods=['GET'])
+@APP.route('/<api_root>', methods=['GET'], strict_slashes=False)
 @taxii_validate_request_headers
 @taxii_validate_url_param
 def taxii2_api_root(api_root: str) -> Response:
@@ -864,7 +1075,7 @@ def taxii2_api_root(api_root: str) -> Response:
     return handle_response(HTTP_200_OK, api_root_response)
 
 
-@APP.route('/<api_root>/status/<status_id>/', methods=['GET'])
+@APP.route('/<api_root>/status/<status_id>', methods=['GET'], strict_slashes=False)
 @taxii_validate_request_headers
 @taxii_validate_url_param
 def taxii2_status(api_root: str, status_id: str) -> Response:  # noqa: F841
@@ -879,7 +1090,7 @@ def taxii2_status(api_root: str, status_id: str) -> Response:  # noqa: F841
                                                                'access to the resource'})
 
 
-@APP.route('/<api_root>/collections/', methods=['GET'])
+@APP.route('/<api_root>/collections', methods=['GET'], strict_slashes=False)
 @taxii_validate_request_headers
 @taxii_validate_url_param
 def taxii2_collections(api_root: str) -> Response:
@@ -903,7 +1114,7 @@ def taxii2_collections(api_root: str) -> Response:
     return handle_response(HTTP_200_OK, collections_response)
 
 
-@APP.route('/<api_root>/collections/<collection_id>/', methods=['GET'])
+@APP.route('/<api_root>/collections/<collection_id>', methods=['GET'], strict_slashes=False)
 @taxii_validate_request_headers
 @taxii_validate_url_param
 def taxii2_collection_by_id(api_root: str, collection_id: str) -> Response:
@@ -928,7 +1139,7 @@ def taxii2_collection_by_id(api_root: str, collection_id: str) -> Response:
     return handle_response(HTTP_200_OK, collection_response)  # type: ignore[arg-type]
 
 
-@APP.route('/<api_root>/collections/<collection_id>/manifest/', methods=['GET'])
+@APP.route('/<api_root>/collections/<collection_id>/manifest', methods=['GET'], strict_slashes=False)
 @taxii_validate_request_headers
 @taxii_validate_url_param
 def taxii2_manifest(api_root: str, collection_id: str) -> Response:
@@ -978,7 +1189,7 @@ def taxii2_manifest(api_root: str, collection_id: str) -> Response:
     )
 
 
-@APP.route('/<api_root>/collections/<collection_id>/objects/', methods=['GET'])
+@APP.route('/<api_root>/collections/<collection_id>/objects', methods=['GET'], strict_slashes=False)
 @taxii_validate_request_headers
 @taxii_validate_url_param
 def taxii2_objects(api_root: str, collection_id: str) -> Response:
@@ -1037,6 +1248,132 @@ def test_module(params: dict) -> str:
     return 'ok'
 
 
+def get_server_info_command(integration_context):
+    server_info = integration_context.get('server_info', None)
+
+    metadata = '**In case the default/api_roots URL is incorrect, you can override it by setting' \
+               '"TAXII2 Service URL Address" field in the integration configuration**\n\n'
+    hr = tableToMarkdown('Server Info', server_info, metadata=metadata)
+
+    result = CommandResults(
+        outputs=server_info,
+        outputs_prefix='TAXIIServer.ServerInfo',
+        readable_output=hr
+    )
+
+    return result
+
+
+def get_server_collections_command(integration_context):
+    collections = integration_context.get('collections', None)
+    markdown = tableToMarkdown('Collections', collections, headers=['id', 'title', 'query', 'description'])
+    result = CommandResults(
+        outputs=collections,
+        outputs_prefix='TAXIIServer.Collection',
+        outputs_key_field='id',
+        readable_output=markdown
+    )
+
+    return result
+
+
+def create_relationships_objects(stix_iocs: list[dict[str, Any]], extensions: list) -> list[dict[str, Any]]:
+    """
+    Create entries for the relationships returned by the searchRelationships command.
+    :param stix_iocs: Entries for the Stix objects associated with given indicators
+    :param extensions: A list of dictionaries representing extension properties to include in the generated STIX objects.
+    :return: A list of dictionaries representing the relationships objects, including entityBs objects
+    """
+    def get_stix_object_value(stix_ioc):
+        if stix_ioc.get('type') == "file":
+            for hash_type in ["SHA-256", "MD5", "SHA-1", "SHA-512"]:
+                if hash_value := stix_ioc.get("hashes").get(hash_type):
+                    return hash_value
+
+        else:
+            return stix_ioc.get('value') or stix_ioc.get('name')
+
+    relationships_list: list[dict[str, Any]] = []
+    iocs_value_to_id = {get_stix_object_value(stix_ioc): stix_ioc.get('id') for stix_ioc in stix_iocs}
+    search_relationships = demisto.searchRelationships({'entities': list(iocs_value_to_id.keys())}).get('data') or []
+    demisto.debug(f"Found {len(search_relationships)} relationships for {len(iocs_value_to_id)} Stix IOC values.")
+
+    relationships_list.extend(create_entity_b_stix_objects(search_relationships, iocs_value_to_id, extensions))
+
+    for relationship in search_relationships:
+
+        if demisto.get(relationship, 'CustomFields.revoked'):
+            continue
+
+        if not iocs_value_to_id.get(relationship.get('entityB')):
+            demisto.debug(f"WARNING: Invalid entity B - Relationships will not be created to entity A:"
+                          f" {relationship.get('entityA')} with relationship name {relationship.get('name')}")
+            continue
+        try:
+            created_parsed = parse(relationship.get('createdInSystem')).strftime(STIX_DATE_FORMAT)
+            modified_parsed = parse(relationship.get('modified')).strftime(STIX_DATE_FORMAT)
+        except Exception as e:
+            created_parsed, modified_parsed = '', ''
+            demisto.debug(f"Error parsing dates for relationship {relationship.get('id')}: {e}")
+
+        relationship_unique_id = uuid.uuid5(SERVER.namespace_uuid, f'relationship:{relationship.get("id")}')
+        relationship_stix_id = f'relationship--{relationship_unique_id}'
+
+        relationship_object: dict[str, Any] = {
+            'type': "relationship",
+            'spec_version': SERVER.version,
+            'id': relationship_stix_id,
+            'created': created_parsed,
+            'modified': modified_parsed,
+            "relationship_type": relationship.get('name'),
+            'source_ref': iocs_value_to_id.get(relationship.get('entityA')),
+            'target_ref': iocs_value_to_id.get(relationship.get('entityB')),
+        }
+        if description := demisto.get(relationship, 'CustomFields.description'):
+            relationship_object['Description'] = description
+
+        relationships_list.append(relationship_object)
+
+    return relationships_list
+
+
+def create_entity_b_stix_objects(relationships: list[dict[str, Any]], iocs_value_to_id: dict, extensions: list) -> list:
+    """
+    Generates a list of STIX objects for the 'entityB' values in the provided 'relationships' list.
+    :param relationships: A list of dictionaries representing relationships between entities
+    :param iocs_value_to_id: A dictionary mapping IOC values to their corresponding ID values.
+    :param extensions: A list of dictionaries representing extension properties to include in the generated STIX objects.
+    :return: A list of dictionaries representing STIX objects for the 'entityB' values
+    """
+    entity_b_objects: list[dict[str, Any]] = []
+    entity_b_values = ""
+    for relationship in relationships:
+        if (entity_b_value := relationship.get('entityB')) and entity_b_value not in iocs_value_to_id:
+            iocs_value_to_id[entity_b_value] = ""
+            entity_b_values += f'\"{entity_b_value}\" '
+    if not entity_b_values:
+        return entity_b_objects
+
+    found_indicators = demisto.searchIndicators(query=f'value:({entity_b_values})').get('iocs') or []
+
+    extensions_dict: dict = {}
+    for xsoar_indicator in found_indicators:
+        xsoar_type = xsoar_indicator.get('indicator_type')
+        stix_ioc, extension_definition, extensions_dict = create_stix_object(xsoar_indicator, xsoar_type, extensions_dict)
+        if XSOAR_TYPES_TO_STIX_SCO.get(xsoar_type) in SERVER.types_for_indicator_sdo:
+            stix_ioc = convert_sco_to_indicator_sdo(stix_ioc, xsoar_indicator)
+        if SERVER.has_extension and stix_ioc:
+            entity_b_objects.append(stix_ioc)
+            if extension_definition:
+                extensions.append(extension_definition)
+        elif stix_ioc:
+            entity_b_objects.append(stix_ioc)
+        iocs_value_to_id[(stix_ioc.get('value') or stix_ioc.get('name'))] = stix_ioc.get('id')
+
+    demisto.debug(f"Generated {len(entity_b_objects)} STIX objects for 'entityB' values.")
+    return entity_b_objects
+
+
 def main():  # pragma: no cover
     """
     Main
@@ -1047,6 +1384,7 @@ def main():  # pragma: no cover
     command = demisto.command()
 
     fields_to_present = create_fields_list(params.get('fields_filter', ''))
+    types_for_indicator_sdo = argToList(params.get('provide_as_indicator'))
 
     try:
         port = int(params.get('longRunningPort'))
@@ -1077,13 +1415,29 @@ def main():  # pragma: no cover
 
     try:
         SERVER = TAXII2Server(scheme, str(host_name), port, collections, certificate,
-                              private_key, http_server, credentials, version, service_address, fields_to_present)
+                              private_key, http_server, credentials, version, service_address, fields_to_present,
+                              types_for_indicator_sdo)
 
         if command == 'long-running-execution':
+            # save TAXII server info in the integration context to make it available later for other commands
+            integration_context = get_integration_context(True)
+            integration_context['collections'] = SERVER.get_collections().get('collections', [])
+            integration_context['server_info'] = SERVER.get_discovery_service(instance_execute=True)
+
+            set_integration_context(integration_context)
+
             run_long_running(params)
 
         elif command == 'test-module':
             return_results(test_module(params))
+
+        elif command == 'taxii-server-list-collections':
+            integration_context = get_integration_context(True)
+            return_results(get_server_collections_command(integration_context))
+
+        elif command == 'taxii-server-info':
+            integration_context = get_integration_context(True)
+            return_results(get_server_info_command(integration_context))
 
     except Exception as e:
         err_msg = f'Error in {INTEGRATION_NAME} Integration [{e}]'

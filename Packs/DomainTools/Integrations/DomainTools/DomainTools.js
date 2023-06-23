@@ -108,7 +108,8 @@ var callDomain = function(url, domain, threshold){
             'Indicator' : domain,
             'Score' : scoreConv(repRes.response.risk_score, threshold),
             'Type': 'domain',
-            'Vendor': 'domaintools'
+            'Vendor': 'domaintools',
+            'Reliability': params.integrationReliability
         }
     };
     if(context.DBotScore.Score === 3){
@@ -301,8 +302,9 @@ var callWhoisHistory = function(url, domain){
 
 var url = params.server.replace(/[\/]+$/, '');
 params.key = params.key || params.credentials.password
-if (!params.key) {
-    throw 'API key must be provided.'
+params.username = params.username || params.credentials.identifier
+if (!params.key || !params.username) {
+    throw 'Username and API key must be provided.'
 }
 switch (command) {
     case 'test-module':

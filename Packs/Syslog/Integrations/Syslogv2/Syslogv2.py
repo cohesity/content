@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from tempfile import NamedTemporaryFile
 from typing import Callable
 
+import urllib3
+
 import syslogmp
 from gevent.server import StreamServer
 from syslog_rfc5424_parser import SyslogMessage, ParseError
@@ -10,7 +12,7 @@ from CommonServerPython import *  # noqa # pylint: disable=unused-wildcard-impor
 from CommonServerUserPython import *  # noqa
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()  # pylint: disable=no-member
+urllib3.disable_warnings()  # pylint: disable=no-member
 
 ''' CONSTANTS '''
 MAX_SAMPLES = 10
@@ -34,6 +36,26 @@ class SyslogMessageExtract:
     occurred: Optional[str]
 
 
+def parse_no_length_limit(data: bytes) -> syslogmp.parser.Message:
+    """
+    Parse a syslog message with no length limit.
+    """
+    parser = syslogmp.parser._Parser(b'')
+    parser.stream = syslogmp.parser.Stream(data)
+
+    priority_value = parser._parse_pri_part()
+    timestamp, hostname = parser._parse_header_part()
+    message = parser._parse_msg_part()
+
+    return syslogmp.parser.Message(
+        facility=priority_value.facility,
+        severity=priority_value.severity,
+        timestamp=timestamp,
+        hostname=hostname,
+        message=message,
+    )
+
+
 def parse_rfc_3164_format(log_message: bytes) -> Optional[SyslogMessageExtract]:
     """
     Receives a log message which is in RFC 3164 format. Parses it into SyslogMessageExtract data class object
@@ -44,8 +66,9 @@ def parse_rfc_3164_format(log_message: bytes) -> Optional[SyslogMessageExtract]:
         (Optional[SyslogMessageExtract]): Extraction data class
     """
     try:
-        syslog_message: syslogmp.Message = syslogmp.parse(log_message)
-    except syslogmp.parser.MessageFormatError:
+        syslog_message: syslogmp.Message = parse_no_length_limit(log_message)
+    except syslogmp.parser.MessageFormatError as e:
+        demisto.debug(f'Could not parse the log message, got MessageFormatError. Error was: {e}')
         return None
     return SyslogMessageExtract(
         app_name=None,
@@ -74,7 +97,8 @@ def parse_rfc_5424_format(log_message: bytes) -> Optional[SyslogMessageExtract]:
     """
     try:
         syslog_message: SyslogMessage = SyslogMessage.parse(log_message.decode('utf-8'))
-    except ParseError:
+    except ParseError as e:
+        demisto.debug(f'Could not parse the log message, got ParseError. Error was: {e}')
         return None
     return SyslogMessageExtract(
         app_name=syslog_message.appname,
@@ -93,7 +117,7 @@ def parse_rfc_5424_format(log_message: bytes) -> Optional[SyslogMessageExtract]:
 
 def parse_rfc_6587_format(log_message: bytes) -> Optional[SyslogMessageExtract]:
     """
-    Receives a log message which is in RFC 5424 format. Parses it into SyslogMessageExtract data class object
+    Receives a log message which is in RFC 6587 format. Parses it into SyslogMessageExtract data class object
     Args:
         log_message (bytes): Syslog message.
 
@@ -114,26 +138,14 @@ def parse_rfc_6587_format(log_message: bytes) -> Optional[SyslogMessageExtract]:
             extracted_message = format_func(encoded_msg)
             if extracted_message:
                 return extracted_message
-    except ValueError:
+    except ValueError as e:
+        demisto.debug(f'Could not parse the log message, got ValueError. Error was: {e}')
         return None
     return None
 
 
 format_funcs: List[Callable[[bytes], Optional[SyslogMessageExtract]]] = [parse_rfc_3164_format, parse_rfc_5424_format,
                                                                          parse_rfc_6587_format]
-
-
-def test_module() -> str:
-    """
-    Tests API connectivity and authentication'
-    Returning 'ok' indicates that the integration works like it is supposed to.
-    Connection to the service is successful.
-    Raises exceptions if something goes wrong.
-
-    Returns:
-        (str): 'ok' if test passed, anything else will fail the test.
-    """
-    return 'ok'
 
 
 def fetch_samples() -> None:
@@ -143,11 +155,12 @@ def fetch_samples() -> None:
     demisto.incidents(get_integration_context().get('samples'))
 
 
-def create_incident_from_syslog_message(extracted_message: SyslogMessageExtract) -> dict:
+def create_incident_from_syslog_message(extracted_message: SyslogMessageExtract, incident_type: Optional[str]) -> dict:
     """
     Creates incident from the extracted Syslog message.
     Args:
         extracted_message (SyslogMessageExtract): Syslog message extraction details.
+        incident_type (Optional[str]): The incident type
 
     Returns:
         (dict): Incident.
@@ -156,6 +169,7 @@ def create_incident_from_syslog_message(extracted_message: SyslogMessageExtract)
         'name': f'Syslog from [{extracted_message.host_name}][{extracted_message.timestamp}]',
         'rawJSON': json.dumps(vars(extracted_message)),
         'occurred': extracted_message.occurred,
+        'type': incident_type,
         'details': '\n'.join([f'{k}: {v}' for k, v in vars(extracted_message).items() if v])
     }
 
@@ -211,16 +225,18 @@ def perform_long_running_loop(socket_data: bytes):
     Returns:
         (None): Creates incident in Cortex XSOAR platform.
     """
+    incident_type: Optional[str] = demisto.params().get('incident_type', '')
     extracted_message: Optional[SyslogMessageExtract] = None
     for format_func in format_funcs:
         extracted_message = format_func(socket_data)
         if extracted_message:
+            demisto.debug(f'Succeeded in parsing the message with {format_func}')
             break
     if not extracted_message:
         raise DemistoException(f'Could not parse the following message: {socket_data.decode("utf-8")}')
 
     if log_message_passes_filter(extracted_message, MESSAGE_REGEX):
-        incident: dict = create_incident_from_syslog_message(extracted_message)
+        incident: dict = create_incident_from_syslog_message(extracted_message, incident_type)
         update_integration_context_samples(incident)
         demisto.createIncidents([incident])
 
@@ -313,8 +329,10 @@ def main() -> None:
     params = demisto.params()
     command = demisto.command()
     message_regex: Optional[str] = params.get('message_regex')
-    certificate: Optional[str] = params.get('certificate')
-    private_key: Optional[str] = params.get('private_key')
+    certificate = (replace_spaces_in_credential(params.get('creds_certificate', {}).get('identifier'))
+                   or params.get('certificate'))
+    private_key = (replace_spaces_in_credential(params.get('creds_certificate', {}).get('password', ''))
+                   or params.get('private_key'))
     port: Union[Optional[str], int] = params.get('longRunningPort')
     try:
         port = int(params.get('longRunningPort'))
@@ -349,7 +367,6 @@ def main() -> None:
 
     # Log exceptions and return errors
     except Exception as e:
-        demisto.error(traceback.format_exc())  # print the traceback
         return_error(f'Failed to execute {demisto.command()} command.\nError:\n{str(e)}')
 
 

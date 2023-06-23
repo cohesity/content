@@ -26,54 +26,6 @@ EPO_SYSTEM_ATTRIBUTE_MAP = {
     'Memory': 'EPOComputerProperties.TotalPhysicalMemory',
 }
 
-EPO_SYSTEM_ATTRIBUTE_MAP_EXTENDED = {
-    'AutoID': 'EPOBranchNode.AutoID',
-    'CPUSerialNum': 'EPOComputerProperties.CPUSerialNum',
-    'CPUSpeed': 'EPOComputerProperties.CPUSpeed',
-    'CPUType': 'EPOComputerProperties.CPUType',
-    'ComputerName': 'EPOComputerProperties.ComputerName',
-    'DefaultLangID': 'EPOComputerProperties.DefaultLangID',
-    'Description': 'EPOComputerProperties.Description',
-    'DomainName': 'EPOComputerProperties.DomainName',
-    'FreeDiskSpace': 'EPOComputerProperties.FreeDiskSpace',
-    'FreeMemory': 'EPOComputerProperties.FreeMemory',
-    'IPAddress': 'EPOComputerProperties.IPAddress',
-    'Hostname': 'EPOComputerProperties.IPHostName',
-    'IPSubnet': 'EPOComputerProperties.IPSubnet',
-    'IPSubnetMask': 'EPOComputerProperties.IPSubnetMask',
-    'IPV4x': 'EPOComputerProperties.IPV4x',
-    'IPV6': 'EPOComputerProperties.IPV6',
-    'IPXAddress': 'EPOComputerProperties.IPXAddress',
-    'NetAddress': 'EPOComputerProperties.NetAddress',
-    'NumOfCPU': 'EPOComputerProperties.NumOfCPU',
-    'OSBuildNum': 'EPOComputerProperties.OSBuildNum',
-    'OSOEMID': 'EPOComputerProperties.OSOEMID',
-    'OSPlatform': 'EPOComputerProperties.OSPlatform',
-    'OSServicePackVer': 'EPOComputerProperties.OSServicePackVer',
-    'OSType': 'EPOComputerProperties.OSType',
-    'OSVersion': 'EPOComputerProperties.OSVersion',
-    'ParentID': 'EPOComputerProperties.ParentID',
-    'SubnetAddress': 'EPOComputerProperties.SubnetAddress',
-    'SubnetMask': 'EPOComputerProperties.SubnetMask',
-    'SystemDescription': 'EPOComputerProperties.SystemDescription',
-    'SysvolFreeSpace': 'EPOComputerProperties.SysvolFreeSpace',
-    'SysvolTotalSpace': 'EPOComputerProperties.SysvolTotalSpace',
-    'TimeZone': 'EPOComputerProperties.TimeZone',
-    'TotalDiskSpace': 'EPOComputerProperties.TotalDiskSpace',
-    'TotalPhysicalMemory': 'EPOComputerProperties.TotalPhysicalMemory',
-    'UserName': 'EPOComputerProperties.UserName',
-    'UserProperty1': 'EPOComputerProperties.UserProperty1',
-    'UserProperty2': 'EPOComputerProperties.UserProperty2',
-    'UserProperty3': 'EPOComputerProperties.UserProperty3',
-    'UserProperty4': 'EPOComputerProperties.UserProperty4',
-    'AgentGUID': 'EPOLeafNode.AgentGUID',
-    'AgentVersion': 'EPOLeafNode.AgentVersion',
-    'ExcludedTags': 'EPOLeafNode.ExcludedTags',
-    'LastUpdate': 'EPOLeafNode.LastUpdate',
-    'ManagedState': 'EPOLeafNode.ManagedState',
-    'Tags': 'EPOLeafNode.Tags'
-}
-
 ''' CLIENT CLASS '''
 
 
@@ -90,9 +42,9 @@ class Client(BaseClient):
 
         """
         _, response = self.epo_help()
-        return response
+        return json.dumps(response)
 
-    def epo_help(self, command: str = None, prefix: str = None) -> Tuple[dict, str]:
+    def epo_help(self, command: str = None, prefix: str = None) -> Tuple[dict, dict]:
         """
 
         Args:
@@ -115,12 +67,9 @@ class Client(BaseClient):
                                           resp_type='text')
         return self._parse_response(epo_response)
 
-    def epo_get_latest_dat(self) -> Tuple[dict, str]:
+    def epo_get_latest_dat(self) -> Tuple[dict, dict]:
         """
         a direct call to specific url to get the version of the most updated dat file
-
-        :type dat_url: ``str``
-        :param dat_url: A url that point to where McAfee stores the latest dat file metadata information
         dat file is the McAfee A/V software definitions file.
         """
         dat_file_url = 'http://update.nai.com/products/commonupdater/gdeltaavv.ini'
@@ -134,7 +83,7 @@ class Client(BaseClient):
 
         return json_response, raw_response
 
-    def epo_get_current_dat(self) -> Tuple[dict, str]:
+    def epo_get_current_dat(self) -> Tuple[dict, dict]:
         """
         returns the currently installed dat file on the ePO system
         Returns(str):
@@ -149,7 +98,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def epo_command(self, command: str, params: dict, resp_type: str = 'json') -> Tuple[dict, str]:
+    def epo_command(self, command: str, params: dict, resp_type: str = 'json') -> Tuple[dict, dict]:
         """
         Runs any given command
         Args:
@@ -175,7 +124,7 @@ class Client(BaseClient):
                           abort_after_minutes: str = None,
                           stop_after_minutes: str = None,
                           randomization_interval: str = None
-                          ) -> Tuple[dict, str]:
+                          ) -> Tuple[dict, dict]:
 
         params = {
             'names': names,
@@ -238,7 +187,7 @@ class Client(BaseClient):
                 'Error getting DAT update task. It seems the task "VSEContentUpdateDemisto" is missing from the EPO '
                 'server. Please contact support for more details')
 
-    def update_repository(self, source_repo: str, target_branch: str) -> Tuple[dict, str]:
+    def update_repository(self, source_repo: str, target_branch: str) -> Tuple[dict, dict]:
         """
         Updating the local repository on the ePO from the public server.
         Returns:
@@ -292,7 +241,7 @@ class Client(BaseClient):
                 return entry['groupPath']
         return ''
 
-    def find_systems(self, group_id: int) -> Tuple[dict, str]:
+    def find_systems(self, group_id: int) -> Tuple[dict, dict]:
         """
         find all systems belongs to the given group Id
         Args:
@@ -312,7 +261,7 @@ class Client(BaseClient):
                                           timeout=self.timeout)
         return self._parse_response(raw_response)
 
-    def find_system(self, search_text: str) -> Tuple[dict, str]:
+    def find_system(self, search_text: str) -> Tuple[dict, dict]:
         """
         find system in the ePO Server system tree
         Args:
@@ -331,7 +280,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def wakeup_agent(self, names: str) -> Tuple[dict, str]:
+    def wakeup_agent(self, names: str) -> Tuple[dict, dict]:
         """
         wakeup agent for as system or list of systems
         Args:
@@ -348,13 +297,13 @@ class Client(BaseClient):
                                       url_suffix='system.wakeupAgent',
                                       params=params,
                                       resp_type='text',
-                                      timeout=60)
+                                      timeout=self.timeout)
 
         # response = response.split('"')[1] if response.startswith('"') else response
         # response = response.replace(r'\n', '\n')
         return self._parse_response(response)
 
-    def apply_tag(self, names: str, tag_name: str) -> Tuple[int, str]:
+    def apply_tag(self, names: str, tag_name: str) -> Tuple[int, dict]:
         """
         Apply the given tag name to machine(s) in names
         Args:
@@ -372,10 +321,10 @@ class Client(BaseClient):
                                       url_suffix='system.applyTag',
                                       params=params,
                                       resp_type='text',
-                                      timeout=60)
+                                      timeout=self.timeout)
         return self._parse_response(response)
 
-    def clear_tag(self, names: str, tag_name: str) -> Tuple[int, str]:
+    def clear_tag(self, names: str, tag_name: str) -> Tuple[int, dict]:
         """
         Clear the given tag name for machine(s) in names
         Args:
@@ -393,10 +342,10 @@ class Client(BaseClient):
                                       url_suffix='system.clearTag',
                                       params=params,
                                       resp_type='text',
-                                      timeout=60)
+                                      timeout=self.timeout)
         return self._parse_response(response)
 
-    def list_tag(self, search_text: str = None) -> Tuple[dict, str]:
+    def list_tag(self, search_text: str = None) -> Tuple[dict, dict]:
         """
         List tags available on ePO server
         Args:
@@ -412,10 +361,10 @@ class Client(BaseClient):
                                       url_suffix='system.findTag',
                                       params=params,
                                       resp_type='text',
-                                      timeout=60)
+                                      timeout=self.timeout)
         return self._parse_response(response)
 
-    def get_table(self, table_name: str = None) -> Tuple[dict, str]:
+    def get_table(self, table_name: str = None) -> Tuple[dict, dict]:
         """
         Get tables from ePO server
         Args:
@@ -443,7 +392,7 @@ class Client(BaseClient):
                     order: str = None,
                     group: str = None,
                     join_tables: str = None,
-                    ) -> Tuple[dict, str]:
+                    ) -> Tuple[dict, dict]:
         """
         query tables from ePO server
         Args:
@@ -454,7 +403,8 @@ class Client(BaseClient):
             order (str): Order in which to return the results, in SQUID syntax.
                          Example: "(order (asc OrionTaskLogTask.StartDate) )"
             group (str): Group the results, in SQUID Syntax. Example: "(group EPOBranchNode.NodeName)"
-            joinTables (str):
+            join_tables (str): The comma-separated list of SQUID targets to join with the target
+                              type; * means join with all types
         Returns:
             query result
         """
@@ -486,7 +436,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def get_version(self) -> Tuple[dict, str]:
+    def get_version(self) -> Tuple[dict, dict]:
         """
         Get ePO Software Version
         Returns:
@@ -500,7 +450,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def move_system(self, names: str, parent_group_id: int) -> Tuple[dict, str]:
+    def move_system(self, names: str, parent_group_id: int) -> Tuple[dict, dict]:
         """
            Moves systems to a specified destination group by name or ID as returned
         Args:
@@ -517,7 +467,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def find_client_task(self, search_text: str = None) -> Tuple[dict, str]:
+    def find_client_task(self, search_text: str = None) -> Tuple[dict, dict]:
         """
            find client task in the ePo system
         Args:
@@ -535,7 +485,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def find_policy(self, search_text: str = None) -> Tuple[dict, str]:
+    def find_policy(self, search_text: str = None) -> Tuple[dict, dict]:
         """
            find policy task in the ePo system
         Args:
@@ -554,14 +504,14 @@ class Client(BaseClient):
         return self._parse_response(response)
 
     def assign_policy_to_group(self, group_id: int, product_id: str, object_id: int,
-                               reset_inheritance: bool = False) -> Tuple[int, str]:
+                               reset_inheritance: str = 'false') -> Tuple[int, dict]:
         """
            Assign policy to group of machines
         Args:
            group_id (int): System tree Group ID.(as returned by system.findGroups)
            product_id (int): Product ID.(as returned by policy.find)
            object_id (int): Object ID.(as returned by policy.find)
-           reset_inheritance (bool):If true resets the inheritance for the specified policy on the given group. Defaults
+           reset_inheritance (str):If true resets the inheritance for the specified policy on the given group. Defaults
                                     to false.
         Returns:
            string indication
@@ -576,7 +526,7 @@ class Client(BaseClient):
         return self._parse_response(response)
 
     def assign_policy_to_system(self, names: str, product_id: str, type_id: int, object_id: int,
-                                reset_inheritance: bool = False) -> Tuple[dict, str]:
+                                reset_inheritance: str = 'false') -> Tuple[dict, dict]:
         """
            Assign policy to system(s)
         Args:
@@ -584,7 +534,7 @@ class Client(BaseClient):
            product_id (int): Product ID.(as returned by policy.find)
            type_id (int): Type ID.(as returned by policy.find)
            object_id (int): Object ID.(as returned by policy.find)
-           reset_inheritance (bool):If true resets the inheritance for the specified policy on the given group. Defaults
+           reset_inheritance (str):If true resets the inheritance for the specified policy on the given group. Defaults
                                     to false.
         Returns:
            string indication
@@ -598,7 +548,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def list_issue(self, issue_id: str = '') -> Tuple[dict, str]:
+    def list_issue(self, issue_id: str = '') -> Tuple[dict, dict]:
         """
         list issue in the system
         Args:
@@ -619,7 +569,7 @@ class Client(BaseClient):
                                       timeout=self.timeout)
         return self._parse_response(response)
 
-    def delete_issue(self, issue_id: str) -> Tuple[dict, str]:
+    def delete_issue(self, issue_id: str) -> Tuple[dict, dict]:
         """
         delete issue in the system
         Args:
@@ -647,7 +597,7 @@ class Client(BaseClient):
                      issue_assignee_name: str = None,
                      issue_ticket_server_name: str = None,
                      issue_ticket_id: str = None,
-                     issue_properties: str = None) -> Tuple[dict, str]:
+                     issue_properties: str = None) -> Tuple[dict, dict]:
         """
         update an issue
         Args:
@@ -709,7 +659,7 @@ class Client(BaseClient):
                      issue_assignee_name: str = None,
                      issue_ticket_server_name: str = None,
                      issue_ticket_id: str = None,
-                     issue_properties: str = None) -> Tuple[dict, str]:
+                     issue_properties: str = None) -> Tuple[dict, dict]:
         """
         create an issue
         Args:
@@ -797,7 +747,7 @@ class Client(BaseClient):
                 json_response = json.loads(str(res['result']))
             except (TypeError, json.JSONDecodeError):
                 json_response = res['result']
-            return json_response, response
+            return json_response, json_response
         elif res['status'] == 'Error':
             raise DemistoException(f"Error occurred. Status: ({res['status']}) Code: ({res['code']}) Result: "
                                    f"{res['result']}")
@@ -839,21 +789,22 @@ def prettify_find_system(find_system: list, extended: bool = True) -> list:
     context_data_find_system = []
     for system in find_system:
         if extended:
-            data_dict = {}
-            for key in EPO_SYSTEM_ATTRIBUTE_MAP_EXTENDED:
-                data_dict[key] = system[EPO_SYSTEM_ATTRIBUTE_MAP_EXTENDED[key]]
-            context_data_find_system.append(data_dict)
+            system_xsoar = {}
+            for key in system:
+                modified_key = key.split('.')[1]
+                system_xsoar[modified_key] = system[key]
+            context_data_find_system.append(system_xsoar)
         else:
             context_data_find_system.append({
-                'Name': system[EPO_SYSTEM_ATTRIBUTE_MAP['Name']],
-                'Domain': system[EPO_SYSTEM_ATTRIBUTE_MAP['Domain']],
-                'Hostname': system[EPO_SYSTEM_ATTRIBUTE_MAP['Hostname']],
-                'IPAddress': system[EPO_SYSTEM_ATTRIBUTE_MAP['IPAddress']],
-                'OS': system[EPO_SYSTEM_ATTRIBUTE_MAP['OS']],
-                'OSVersion': system[EPO_SYSTEM_ATTRIBUTE_MAP['OSVersion']],
-                'Processor': system[EPO_SYSTEM_ATTRIBUTE_MAP['Processor']],
-                'Processors': system[EPO_SYSTEM_ATTRIBUTE_MAP['Processors']],
-                'Memory': system[EPO_SYSTEM_ATTRIBUTE_MAP['Memory']]
+                'Name': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Name')),
+                'Domain': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Domain')),
+                'Hostname': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Hostname')),
+                'IPAddress': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('IPAddress')),
+                'OS': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('OS')),
+                'OSVersion': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('OSVersion')),
+                'Processor': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Processor')),
+                'Processors': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Processors')),
+                'Memory': system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Memory'))
             })
     return context_data_find_system
 
@@ -870,16 +821,16 @@ def system_to_md(system: dict, verbose: bool = False) -> str:
     """
     md = ''
     if verbose:
-        md += f'#### {system["EPOComputerProperties.ComputerName"]} \n'
-        md += "Attribute|Value\n-|-\n"
+        md += f'#### {system.get("EPOComputerProperties.ComputerName")} \n'
+        md += 'Attribute|Value\n-|-\n'
         for key in system:
             md += f'{key} | {system[key]}\n'
 
-        md += "---\n"
+        md += '---\n'
     else:
         md += '|'
         for key in EPO_SYSTEM_ATTRIBUTE_MAP:
-            md += f'{system[EPO_SYSTEM_ATTRIBUTE_MAP[key]]} |'
+            md += f'{system.get(EPO_SYSTEM_ATTRIBUTE_MAP.get(key))} |'
 
         md += '\n'
     return md
@@ -1033,8 +984,9 @@ def epo_get_current_dat_command(client: Client) -> CommandResults:
 def epo_command_command(client: Client, args: Dict[str, Any]) -> CommandResults:
     """ Executes the ePO command
     XSOAR CMD example: !epo-command command=system.find searchText=10.0.0.1
-    headers=EPOBranchNode.AutoID,EPOComputerProperties.ComputerName Args: client (Client: BaseClient): a utility
-    class used for communicating with ePO Server args (dict): a dictionary that store the command argument.
+    headers=EPOBranchNode.AutoID,EPOComputerProperties.ComputerName
+        Args: client (Client: BaseClient): a utility class used for communicating with ePO Server
+        args (dict): a dictionary that store the command argument.
 
     Returns:
         CommandResults
@@ -1061,20 +1013,22 @@ def epo_command_command(client: Client, args: Dict[str, Any]) -> CommandResults:
     header_list: List[Any]
     if 'headers' in args:
         headers_list = list(args['headers'].split(','))
+        md = tableToMarkdown(f'ePO command *{args["command"]}* results:', response_json, headers=headers_list)
     else:
         if isinstance(response_json, dict):
             headers_list = list(response_json.keys())
+            md = tableToMarkdown(f'ePO command *{args["command"]}* results:', response_json, headers=headers_list)
         elif isinstance(response_json, str):
-            md = f'#### ePO command *{args["command"]} * results:\n  {raw_response}'
-            headers_list = []
+            md = f'#### ePO command *{args["command"]} * results:\n  {response_json}'
         elif isinstance(response_json, list) and len(response_json) and isinstance(response_json[0], str):
             headers_list = "output"
+            md = tableToMarkdown(f'ePO command *{args["command"]}* results:', response_json, headers_list)
         else:
             try:
                 headers_list = list(set().union(*(entry.keys() for entry in response_json)))
+                md = tableToMarkdown(f'ePO command *{args["command"]}* results:', response_json, headers_list)
             except Exception:
-                headers_list = []
-    md = tableToMarkdown(f'ePO command *{args["command"]}* results:', response_json, headers=headers_list)
+                md = tableToMarkdown(f'ePO command *{args["command"]}* results:', response_json)
 
     return CommandResults(
         raw_response=raw_response,
@@ -1091,7 +1045,7 @@ def epo_update_client_dat_command(client: Client, args: Dict[str, Any]) -> Comma
        Returns:
            CommandResults
     """
-    names = args.get('systems', str)
+    names: str = args.get('systems', str)
     if names is None:
         raise ValueError('Must provide systems')
     client_task_id, client_product_id = client.get_client_task_id_by_name(search_text='VSEContentUpdateDemisto')
@@ -1209,16 +1163,17 @@ def epo_find_systems_command(client: Client, args: Dict[str, Any]) -> List[Comma
             )]
             count = 0
             for endpoint_info in endpoints:
-                endpoint = Common.Endpoint(id=endpoint_info.get('ComputerName', ''),
-                                           hostname=endpoint_info.get('IPHostName', ''),
-                                           ip_address=endpoint_info.get('IPAddress', ''),
-                                           domain=endpoint_info.get('DomainName', ''),
-                                           os=endpoint_info.get('OSType', ''),
-                                           os_version=endpoint_info.get('OSVersion', ''),
-                                           processor=endpoint_info.get('CPUType', ''),
-                                           processors=endpoint_info.get('NumOfCPU', ''),
-                                           memory=endpoint_info.get('TotalPhysicalMemory', '')
-                                           )
+                endpoint = Common.Endpoint(
+                    id=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Hostname', str).split('.')[1], ''),
+                    hostname=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Hostname', str).split('.')[1], ''),
+                    ip_address=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('IPAddress', str).split('.')[1], ''),
+                    domain=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Domain', str).split('.')[1], ''),
+                    os=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('OS', str).split('.')[1], ''),
+                    os_version=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('OSVersion', str).split('.')[1], ''),
+                    processor=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Processor', str).split('.')[1], ''),
+                    processors=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Processors', str).split('.')[1], ''),
+                    memory=endpoint_info.get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Memory', str).split('.')[1], ''))
+
                 md = tableToMarkdown('Endpoint information:',
                                      prettify_find_system([response_json[count]], False), removeNull=True)
                 res.append(CommandResults(readable_output=md, indicator=endpoint))
@@ -1251,16 +1206,16 @@ def epo_find_system_command(client: Client, args: Dict[str, Any]) -> CommandResu
     if len(response_json) > 0:
         md += systems_to_md(response_json, verbose)
         endpoint_info = prettify_find_system(list(response_json))
-        endpoint = Common.Endpoint(id=endpoint_info[0].get('ComputerName', ''),
-                                   hostname=endpoint_info[0].get('IPHostName', ''),
-                                   ip_address=endpoint_info[0].get('IPAddress', ''),
-                                   domain=endpoint_info[0].get('DomainName', ''),
-                                   os=endpoint_info[0].get('OSType', ''),
-                                   os_version=endpoint_info[0].get('OSVersion', ''),
-                                   processor=endpoint_info[0].get('CPUType', ''),
-                                   processors=endpoint_info[0].get('NumOfCPU', ''),
-                                   memory=endpoint_info[0].get('TotalPhysicalMemory', '')
-                                   )
+        endpoint = Common.Endpoint(
+            id=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Hostname', str).split('.')[1], ''),
+            hostname=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Hostname', str).split('.')[1], ''),
+            ip_address=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('IPAddress', str).split('.')[1], ''),
+            domain=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Domain', str).split('.')[1], ''),
+            os=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('OS', str).split('.')[1], ''),
+            os_version=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('OSVersion', str).split('.')[1], ''),
+            processor=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Processor', str).split('.')[1], ''),
+            processors=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Processors', str).split('.')[1], ''),
+            memory=endpoint_info[0].get(EPO_SYSTEM_ATTRIBUTE_MAP.get('Memory', str).split('.')[1], ''))
         return CommandResults(
             raw_response=response,
             readable_output=md,
@@ -1287,11 +1242,12 @@ def epo_wakeup_agent_command(client: Client, args: Dict[str, Any]) -> CommandRes
     """
     names = args.get('names', str)
     response_json, response = client.wakeup_agent(names)
-    if response.find('No systems found') >= 0:
+    response_str = json.dumps(response)
+    if response_str.find('No systems found') >= 0:
         md = '#### No systems were found.'
     else:
         md = '#### ePO agents was awaken.\n'
-        pattern_match = re.search(r'completed:\s([-]*\d+)\\nfailed:\s([-]*\d+)\\nexpired:\s([-]*\d+)', response)
+        pattern_match = re.search(r'completed:\s([-]*\d+)\\nfailed:\s([-]*\d+)\\nexpired:\s([-]*\d+)', response_str)
         if pattern_match:
             md += '| Completed | Failed | Expired |\n'
             md += '|-|-|-|\n'
@@ -1590,7 +1546,7 @@ def epo_assign_policy_to_group(client: Client, args: Dict[str, Any]) -> CommandR
     object_id = arg_to_number(args.get('objectId', str))
     if object_id is None:
         raise ValueError('Must provide objectId')
-    reset_inheritance = args.get('resetInheritance', 'False')
+    reset_inheritance = args.get('resetInheritance', 'false')
 
     json_response, raw_response = client.assign_policy_to_group(group_id, product_id, object_id,
                                                                 reset_inheritance=reset_inheritance)
@@ -1624,7 +1580,7 @@ def epo_assign_policy_to_system(client: Client, args: Dict[str, Any]) -> Command
     object_id = arg_to_number(args.get('objectId', str))
     if object_id is None:
         raise ValueError('Must provide objectId')
-    reset_inheritance = argToBoolean(args.get('resetInheritance', False))
+    reset_inheritance = args.get('resetInheritance', 'false')
 
     response_json, raw_response = client.assign_policy_to_system(names, product_id, type_id, object_id,
                                                                  reset_inheritance=reset_inheritance)

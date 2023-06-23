@@ -74,7 +74,14 @@ Queries PolySwarm for file reputation information.
 | PolySwarm.Positives | Number | The total number of positives found. | 
 | PolySwarm.Scan_UUID | String | The PolySwarm scan UUID. | 
 | PolySwarm.Artifact | String | The artifact queried. | 
-
+| DBotScore.Indicator | The indicator that was tested. | String |
+| DBotScore.Score | The actual score. | Number |
+| DBotScore.Type | The type of indicator. | String |
+| DBotScore.Vendor | The vendor used to calculate the score. | String |
+| DBotScore.Reliability | Reliability of the source providing the intelligence data. | String |
+| File.MD5 | The MD5 hash of the file. | String |
+| File.SHA256 | The SHA256 hash of the file. | String |
+| File.SHA1 | The SHA1 hash of the file. | String |
 
 #### Command Example
 `!file hash="2410907a92b16dbd23a88d6bbd5037eae20eea809279f370293b587e1996eafe"`  

@@ -4,12 +4,6 @@ commonfields:
   version: -1
 configuration:
 - additionalinfo: Received from the authorization process or from the self-deployed
-    configuration process.
-  display: ID / Client ID
-  name: auth_id
-  required: true
-  type: 4
-- additionalinfo: Received from the authorization process or from the self-deployed
     configuration process (find the tenant ID in your app overview page in the Azure
     portal)
   display: Token / Tenant ID
@@ -18,12 +12,27 @@ configuration:
   type: 4
 - additionalinfo: Received from the authorization process or from the self-deployed
     configuration process.
-  display: Key / Client Secret
-  name: enc_key
-  required: true
+  display: ID / (Client ID :For client credentials flow)
+  name: credentials
+  required: false
+  type: 9
+- additionalinfo: Used for certificate authentication. As appears in the "Certificates & secrets" page of the app.
+  display: Certificate Thumbprint
+  name: certificate_thumbprint
+  required: false
   type: 4
+- additionalinfo: Used for certificate authentication. The private key of the registered certificate.
+  display: Private Key
+  name: private_key
+  required: false
+  type: 14
 - display: Use a self-deployed Azure application
   name: self_deployed
+  required: false
+  type: 8
+- additionalinfo: Check when authenticating using the Client Credentials flow.
+  display: Use Client Credentials Authorization Flow
+  name: client_credentials
   required: false
   type: 8
 - display: Application redirect URI (for self-deployed mode)
@@ -36,6 +45,20 @@ configuration:
   name: auth_code
   required: false
   type: 4
+- additionalinfo: Relevant only if the integration is running on Azure VM. 
+    If selected, authenticates based on the value provided for the Azure Managed Identities Client ID field.
+    If no value is provided for the Azure Managed Identities Client ID field, authenticates based on the System Assigned Managed Identity.
+    For additional information, see the Help tab.
+  display: Use Azure Managed Identities
+  name: use_managed_identities
+  required: false
+  type: 8
+- additionalinfo: The Managed Identities client id for authentication - relevant only if the integration is running on Azure VM.
+  displaypassword: Azure Managed Identities Client ID
+  name: managed_identities_client_id
+  required: false
+  hiddenusername: true
+  type: 9
 - display: Subscription ID
   name: subscriptionID
   required: true
@@ -312,7 +335,11 @@ script:
     description: Deletes a specified saved search in the Log Analytics workspace.
     execution: false
     name: azure-log-analytics-delete-saved-search
-  dockerimage: demisto/crypto:1.0.0.24380
+  - description: Generate the login url used for Authorization code flow.
+    execution: false
+    name: azure-log-analytics-generate-login-url
+    arguments: []
+  dockerimage: demisto/crypto:1.0.0.52480
   feed: false
   isfetch: false
   longRunning: false

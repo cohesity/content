@@ -1,4 +1,4 @@
-Qualys Vulnerability Management lets you create, run, fetch and manage reports. Launch and manage vulnerability and compliance scans. Manage the host assets you want to scan for vulnerabilities and compliance
+Qualys Vulnerability Management lets you create, run, fetch and manage reports, launch and manage vulnerability and compliance scans, and manage the host assets you want to scan for vulnerabilities and compliance.
 This integration was integrated and tested with version 2.0 of QualysVulnerabilityManagement
 
 ## Changes compared to V1
@@ -52,20 +52,26 @@ This integration was integrated and tested with version 2.0 of QualysVulnerabili
 11. New playbook - qualys-report-launch-compliance-policy-and-fetch.yml
 
 
-## Configure QualysVulnerabilityManagement on Cortex XSOAR
+## Configure Qualys v2 on Cortex XSOAR
 
 1. Navigate to **Settings** > **Integrations** > **Servers & Services**.
-2. Search for QualysVulnerabilityManagement.
+2. Search for Qualys v2.
 3. Click **Add instance** to create and configure a new integration instance.
 
     | **Parameter** | **Required** |
     | --- | --- |
     | Server URL | True |
     | Username | True |
+    | Password | True |
     | Trust any certificate (not secure) | False |
     | Use system proxy settings | False |
 
 4. Click **Test** to validate the URLs, token, and connection.
+
+## Asset Tag Commands
+There are several API endpoints on the Qualys API that can be used in the QualysV2 integration configuration as the `SERVER URL` parameter.
+When using `asset-tag` commands, the [official documentation](https://www.qualys.com/docs/qualys-asset-management-tagging-api-v2-user-guide.pdf) recommends that the `SERVER URL` parameter should be in the following format: `https://qualysapi.<tenant>.apps.qualys.com/<end-point>`.
+
 ## Commands
 You can execute these commands from the Cortex XSOAR CLI, as part of an automation, or in a playbook.
 After you successfully execute a command, a DBot message appears in the War Room with the command details.
@@ -84,8 +90,8 @@ View a list of IP addresses in the user account.
 | ips | Show only certain IP addresses/ranges. | Optional | 
 | network_id | Restrict the request to a certain custom network ID. | Optional | 
 | tracking_method | Show only IP addresses/ranges which have a certain tracking method. Possible values are: IP, DNS, NETBIOS. | Optional | 
-| compliance_enabled | Specify 1 to list compliance IP addresses in the user’s account. These hosts are assigned to the policy compliance module. or 0 to get host that are not. Possible values are: 0, 1. | Optional | 
-| certview_enabled | (Optional) Set to 1 to list IP addresses in the user’s account assigned to the Certificate View module. Specify 0 to list IPs that are not assigned to the Certificate View module. Note - This option will be supported when Certificate View GA is released and is enabled for your account. Possible values are: 0, 1. | Optional | 
+| compliance_enabled | Specify 1 to list compliance IP addresses in the user’s account. These hosts are assigned to the policy compliance module. Specify 0 to get host that are not assigned to the policy compliance module. Possible values are: 0, 1. | Optional | 
+| certview_enabled | (Optional) Specify 1 to list IP addresses in the user’s account assigned to the Certificate View module. Specify 0 to list IP addresses that are not assigned to the Certificate View module. Note - This option will be supported when Certificate View GA is released and is enabled for your account. Possible values are: 0, 1. | Optional | 
 | limit | Specify a positive numeric value to limit the amount of results in the requested list. | Optional | 
 
 
@@ -93,8 +99,8 @@ View a list of IP addresses in the user account.
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.IP.Address | unknown | IP Addresses. | 
-| Qualys.IP.Range | unknown | IP Range. | 
+| Qualys.IP.Address | unknown | IP addresses. | 
+| Qualys.IP.Range | unknown | IP range. | 
 
 
 #### Command Example
@@ -148,7 +154,7 @@ Get a list of generated reports in the system
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Report ID. | 
+| Qualys.Report.ID | String | Report ID. | 
 | Qualys.Report.TITLE | unknown | Report title. | 
 | Qualys.Report.TYPE | unknown | Report type. | 
 | Qualys.Report.LAUNCH_DATETIME | unknown | Date and time the report launched. | 
@@ -179,7 +185,7 @@ Lists vulnerability scans in the user’s account
 
 | **Argument Name** | **Description** | **Required** |
 | --- | --- | --- |
-| scan_ref | Show only a scan with a certain scan referenc ecode. | Optional | 
+| scan_ref | Show only a scan with a certain scan reference code. | Optional | 
 | state | Show only one or more scan states. | Optional | 
 | processed | Specify 0 to show only scans that are not processed. Specify 1 to show only scans that have been processed. Possible values are: 0, 1. | Optional | 
 | type | Show only a certain scan type. Possible values are: On-Demand, Scheduled, API. | Optional | 
@@ -215,7 +221,7 @@ Lists vulnerability scans in the user’s account
 | Qualys.Scan.SCHEDULE | unknown | Scan Schedule. | 
 | Qualys.Scan.TARGET | unknown | Scan Target. | 
 | Qualys.Scan.ASSET_GROUP_TITLE | unknown | Target Asset Group Title. | 
-| Qualys.Scan.DEFAULT_FLAG | unknown | Scan Deafualt Flag. | 
+| Qualys.Scan.DEFAULT_FLAG | unknown | Scan Default Flag. | 
 | Qualys.Scan.USER_LOGIN | unknown | The user that created the scan. | 
 
 
@@ -604,7 +610,7 @@ Gives you a list of SCAP scans in your account
 | Qualys.SCAP.Scan.Schedule | unknown | Scan Schedule. | 
 | Qualys.SCAP.Scan.Target | unknown | Scan Target. | 
 | Qualys.SCAP.Scan.AssetGroupTitle | unknown | Target Asset Group Title. | 
-| Qualys.SCAP.Scan.DeafualtFlag | unknown | Scan Deafualt Flag. | 
+| Qualys.SCAP.Scan.DeafualtFlag | unknown | Scan Default Flag. | 
 | Qualys.SCAP.Scan.UserLogin | unknown | The user that created the scan. | 
 
 
@@ -663,7 +669,7 @@ Get a list of compliance scans in your account.
 | Qualys.Scan.SCHEDULE | unknown | Scan Schedule. | 
 | Qualys.Scan.TARGET | unknown | Scan Target. | 
 | Qualys.Scan.ASSET_GROUP_TITLE | unknown | Target Asset Group Title. | 
-| Qualys.Scan.DEFAULT_FLAG | unknown | Scan Deafualt Flag. | 
+| Qualys.Scan.DEFAULT_FLAG | unknown | Scan Default Flag. | 
 | Qualys.Scan.USER_LOGIN | unknown | The user that created the scan. | 
 
 
@@ -691,10 +697,9 @@ Shows schedule scans
 | show_notifications | (Optional) Specify 1 to include the notification settings for each schedule in the XML output. | Optional | 
 | scan_type | (Optional) Launch a scan with a certain type. Possible values are: certview, perimeter. | Optional | 
 | fqdn | (Optional) The target FQDN for a vulnerability scan. You must specify at least one target i.e. IPs, asset groups or FQDNs. Multiple values are comma separated. | Optional | 
-| show_cloud_details | (Optional) Set to 1 to display the cloud details (Provider, Connector, Scan Type and Cloud Target) in the XML output. Otherwise the details are not displayed in the output. | Optional | 
+| show_cloud_details | (Optional) Set to 1 to display the cloud details (Provider, Connector, Scan Type and Cloud Target) in the XML output. Otherwise the details are not displayed in the output. The cloud details will show scan type "Cloud Perimeter" for cloud perimeter scans. | Optional | 
 | client_id | (Optional) Id assigned to the client (Consultant type subscription only). Parameter client_id or client_name may be specified for the same request. | Optional | 
 | client_name | (Optional) Name of the client (Consultant type subscription only). Parameter client_id or client_name may be specified for the same request. | Optional | 
-| show_cloud_details | (Optional) Set to 1 to display cloud details in the XML output. The cloud details will show scan type "Cloud Perimeter" for cloud perimeter scans. | Optional | 
 | limit | Specify a positive numeric value to limit the amount of results in the requested list. | Optional | 
 
 
@@ -714,7 +719,7 @@ Shows schedule scans
 | Qualys.Scan.STATUS.SUB_STATE | unknown | Scan status sub state. | 
 | Qualys.Scan.TARGET | unknown | Scan Target. | 
 | Qualys.Scan.ASSET_GROUP_TITLE | unknown | Target Asset Group Title. | 
-| Qualys.Scan.DEFAULT_FLAG | unknown | Scan Deafualt Flag. | 
+| Qualys.Scan.DEFAULT_FLAG | unknown | Scan Default Flag. | 
 | Qualys.Scan.USER_LOGIN | unknown | The user that created the scan. | 
 | Qualys.Scan.ACTIVE | unknown | Scheduled scan active. | 
 | Qualys.Scan.USER_ENTERED_IPS.RANGE.START | unknown | IP range requested start. | 
@@ -809,14 +814,15 @@ View a list of scanned hosts in the user account.
 | tag_set_by | (Optional when use_tags=1) Specify “id” (the default) to select a tag set by providing tag IDs. Specify “name” to select a tag set by providing tag names. Possible values are: id, name. | Optional | 
 | tag_include_selector | (Optional when use_tags=1) Select “any” (the default) to include hosts that match at least one of the selected tags. Select “all” to include hosts that match all of the selected tags. Possible values are: any, all. | Optional | 
 | tag_exclude_selector | (Optional when use_tags=1) Select “any” (the default) to exclude hosts that match at least one of the selected tags. Select “all” to exclude hosts that match all of the selected tags. Possible values are: any, all. | Optional | 
-| tag_set_include | (Optional when use_tags=1) Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
-| tag_set_exclude | (Optional when use_tags=1) Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_include | (Optional when use_tags=1) Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_exclude | (Optional when use_tags=1) Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
 | show_tags | (Optional) Specify 1 to display asset tags associated with each host in the XML output. Possible values are: 0, 1. | Optional | 
 | host_metadata | Specify the name of the cloud provider to show the assets managed by the cloud provider. Valid values: ec2, google, azure. | Optional | 
 | host_metadata_fields | (Optional when host_metadata is specified) Specify metadata fields to only return data for certain attributes. | Optional | 
 | show_cloud_tags | (Optional) Specify 1 to display cloud provider tags for each scanned host asset in the output. The default value of the parameter is set to 0. When set to 0, we will not show the cloud provider tags for the scanned assets. Possible values are: 0, 1. | Optional | 
 | cloud_tag_fields | (Optional when show_cloud_tags is specified) Specify cloud tags or cloud tag and name combinations to only return information for specified cloud tags. A cloud tag name and value combination is specified with a colon (for example:SomeTag6:AY_ec2). For each cloud tag, we show the cloud tag’s name, its value, and last success date (the tag last success date/time, fetched from instance). If this parameter is not specified and "show_cloud_tags" is set to 1, we will show all the cloud provider tags for the assets. | Optional | 
 | limit | Specify a positive numeric value to limit the amount of results in the requested list. | Optional | 
+| details | (Optional) Show the requested amount of host information for each host. A valid value is: Basic, Basic/AGs, All, All/AGs, or None. | Optional |
 
 
 #### Context Output
@@ -1009,8 +1015,8 @@ Show the excluded host list for the user's account. Hosts in your excluded host 
 | tag_include_selector | (Optional when use_tags=1) Specify "any" (the default) to include excluded hosts that match at least one of the selected tags. Specify "all" to include excluded hosts that match all of the selected tags. Possible values are: any, all. | Optional | 
 | tag_exclude_selector | (Optional when use_tags=1) Specify "any" (the default) to ignore excluded hosts that match at least one of the selected tags. Specify "all" to ignore excluded hosts that match all of the selected tags. Possible values are: any, all. | Optional | 
 | tag_set_by | (Optional when use_tags=1) Specify "id" (the default) to select a tag set by providing tag IDs. Specify "name" to select a tag set by providing tag names. Possible values are: id, name. | Optional | 
-| tag_set_include | (Optional when use_tags=1) Specify a tag set to include. Excluded hosts that match these tags will be included. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
-| tag_set_exclude | (Optional when use_tags=1) Specify a tag set to exclude. Excluded hosts that match these tags will be ignored. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_include | (Optional when use_tags=1) Specify a tag set to include. Excluded hosts that match these tags will be included. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_exclude | (Optional when use_tags=1) Specify a tag set to exclude. Excluded hosts that match these tags will be ignored. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
 | limit | Specify a positive numeric value to limit the amount of results in the requested list. | Optional | 
 
 
@@ -1075,7 +1081,7 @@ Get list of scheduled reports
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Report ID. | 
+| Qualys.Report.ID | String | Report ID. | 
 | Qualys.Report.TITLE | unknown | Report title. | 
 | Qualys.Report.TYPE | unknown | Report type. | 
 | Qualys.Report.LAUNCH_DATETIME | unknown | Date and time the report launched. | 
@@ -1090,7 +1096,7 @@ Get list of scheduled reports
 | Qualys.Report.SCHEDULE.START_DATE_UTC | unknown | Start date of the scheduled report in UTC format. | 
 | Qualys.Report.SCHEDULE.START_HOUR | unknown | Start hour of the scheduled report. | 
 | Qualys.Report.SCHEDULE.START_MINUTE | unknown | Start minute of the scheduled report. | 
-| Qualys.Report.SCHEDULE.DAILY.@frequency_days | unknown | Frequency of the schduled report. | 
+| Qualys.Report.SCHEDULE.DAILY.@frequency_days | unknown | Frequency of the scheduled report. | 
 | Qualys.Report.SCHEDULE.TIME_ZONE.TIME_ZONE_CODE | unknown | Timezone of the scheduled report. | 
 | Qualys.Report.SCHEDULE.TIME_ZONE.TIME_ZONE_DETAILS | unknown | Timezone details of the scheduled report. | 
 
@@ -19288,8 +19294,8 @@ Get account asset groups
                     "54.155.52.85",
                     "96.252.18.158",
                     "172.31.10.110",
-                    "172.31.11.47",
-                    "172.31.11.229"
+                    "1.1.1.1",
+                    "1.1.1.1"
                 ],
                 "IP_RANGE": [
                     "1.1.1.3-1.1.1.9",
@@ -19309,7 +19315,7 @@ Get account asset groups
 >### Group List
 >|APPLIANCE_IDS|DEFAULT_APPLIANCE_ID|ID|IP_SET|TITLE|
 >|---|---|---|---|---|
->|  |  | 492950 | IP: 1.1.1.1,<br/>1.1.2.1,<br/>1.1.2.3,<br/>1.5.2.1,<br/>1.5.6.1,<br/>8.8.8.8,<br/>18.130.16.32,<br/>23.96.25.100,<br/>34.99.231.241,<br/>35.185.27.57,<br/>52.58.204.23,<br/>54.155.52.85,<br/>96.252.18.158,<br/>172.31.10.110,<br/>172.31.11.47,<br/>172.31.11.229<br/>IP_RANGE: 1.1.1.3-1.1.1.9,<br/>1.1.2.8-1.1.2.9,<br/>1.2.2.2-1.2.2.3,<br/>192.168.0.87-192.168.0.92 | All |
+>|  |  | 492950 | IP: 1.1.1.1,<br/>1.1.2.1,<br/>1.1.2.3,<br/>1.5.2.1,<br/>1.5.6.1,<br/>8.8.8.8,<br/>18.130.16.32,<br/>23.96.25.100,<br/>34.99.231.241,<br/>35.185.27.57,<br/>52.58.204.23,<br/>54.155.52.85,<br/>96.252.18.158,<br/>172.31.10.110,<br/>1.1.1.1,<br/>1.1.1.1<br/>IP_RANGE: 1.1.1.3-1.1.1.9,<br/>1.1.2.8-1.1.2.9,<br/>1.2.2.2-1.2.2.3,<br/>192.168.0.87-192.168.0.92 | All |
 
 
 ### qualys-report-fetch
@@ -19830,7 +19836,7 @@ fetch scan results for a scan
 
 ### qualys-report-cancel
 ***
-Cancel running report
+Cancel the running report.
 
 
 #### Base Command
@@ -19847,7 +19853,9 @@ Cancel running report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | ID of the canceled report | 
+| Qualys.Report.ID | String | ID of the canceled report | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for report cancellation. | 
 
 
 #### Command Example
@@ -19858,23 +19866,24 @@ Cancel running report
 {
     "Qualys": {
         "Report": {
+            "DATETIME": "2021-12-20T12:00:02Z",
+            "TEXT": "Report cancelled successfully",
             "ID": "9229164"
         }
     }
 }
 ```
-``` ```
 
 #### Human Readable Output
 >### Canceled report
->|ID|
->|---|
->| 9229164 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:02Z | 9229164 | Report cancelled successfully |
 
 
 ### qualys-report-delete
 ***
-Delete a saved report in the user’s Report Share
+Delete a saved report in the user’s Report Share.
 
 
 #### Base Command
@@ -19891,7 +19900,9 @@ Delete a saved report in the user’s Report Share
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Deleted Report ID. | 
+| Qualys.Report.ID | String | Deleted report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the report deletion. | 
 
 
 #### Command Example
@@ -19902,6 +19913,8 @@ Delete a saved report in the user’s Report Share
 {
     "Qualys": {
         "Report": {
+            "DATETIME": "2021-12-20T12:00:02Z",
+            "TEXT": "Report deleted successfully",
             "ID": "9470634"
         }
     }
@@ -19910,15 +19923,15 @@ Delete a saved report in the user’s Report Share
 
 #### Human Readable Output
 
+
 >### Deleted report
->|ID|
->|---|
->| 9470634 |
-
-
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:02Z | 9470634 | Report deleted successfully |
+>
 ### qualys-scorecard-launch
 ***
-Launch a vulnerability scorecard report
+Launch a vulnerability scorecard report.
 
 
 #### Base Command
@@ -19950,7 +19963,9 @@ Launch a vulnerability scorecard report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Report ID. | 
+| Qualys.Report.ID | String | Report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the scorecard launch. | 
 
 
 #### Command Example
@@ -19961,7 +19976,9 @@ Launch a vulnerability scorecard report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470641"
+            "DATETIME": "2021-12-20T12:00:02Z",
+            "ID": "10788991",
+            "TEXT": "New scorecard launched"
         }
     }
 }
@@ -19970,9 +19987,9 @@ Launch a vulnerability scorecard report
 #### Human Readable Output
 
 >### New scorecard launched
->|ID|
->|---|
->| 9470641 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:02Z | 10788991 | New scorecard launched |
 
 
 ### qualys-vm-scan-launch
@@ -19996,16 +20013,16 @@ Launch a vulnerability scorecard report
 | tag_include_selector |  Select “any” (the default) to include hosts that match at least one of the selected tags. Select “all” to include hosts that match all of the selected tags. Possible values are: all, any. | Optional | 
 | tag_exclude_selector | Select “any” (the default) to exclude hosts that match at least one of the selected tags. Select “all” to exclude hosts that match all of the selected tags. Possible values are: all, any. | Optional | 
 | tag_set_by | Specify “id” (the default) to select a tag set by providing tag IDs. Specify “name” to select a tag set by providing tag names. Possible values are: id, name. | Optional | 
-| tag_set_include | Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
-| tag_set_exclude | Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
-| use_ip_nt_range_tags_include | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. valid only when target_from=tags is specified. Possible values are: 0, 1. | Optional | 
-| use_ip_nt_range_tags_exclude | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to exclude all IP addresses defined in tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected.  valid only when target_from=tags is specified. Possible values are: 0, 1. | Optional | 
-| use_ip_nt_range_tags | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in tags. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. Possible values are: 0, 1. | Optional | 
+| tag_set_include | Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_exclude | Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
+| use_ip_nt_range_tags_include | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in the tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. valid only when target_from=tags is specified. Possible values are: 0, 1. | Optional | 
+| use_ip_nt_range_tags_exclude | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to exclude all IP addresses defined in the tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected.  valid only when target_from=tags is specified. Possible values are: 0, 1. | Optional | 
+| use_ip_nt_range_tags | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in tags. When this ispecified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. Possible values are: 0, 1. | Optional | 
 | iscanner_id | The IDs of the scanner appliances to be used. Multiple entries are comma separated. For an Express Lite user, Internal Scanning must be enabled in the user's account. One of these parameters must also be specified in a request: iscanner_name, iscanner_id, default_scanner, scanners_in_ag, scanners_in_tagset. When none of these are specified, External scanners are used. These parameters are mutually exclusive and cannot be specified in the same request: iscanner_id and iscanner_name. | Optional | 
 | iscanner_name | Specifies the name of the Scanner Appliance for the map, when the map target has private use internal IPs. Using Express Lite, Internal Scanning must be enabled in your account. | Optional | 
 | default_scanner | Specify 1 to use the default scanner in each target asset group. For an Express Lite user, Internal Scanning must be enabled in the user’s account. Possible values are: 0, 1. | Optional | 
 | scanners_in_ag | Specify 1 to distribute the scan to the target asset groups’ scanner appliances. Appliances in each asset group are tasked with scanning the IPs in the group. By default up to 5 appliances per group will be used and this can be configured for your account (please contact your Account Manager or Support). For an Express Lite user, Internal Scanning must be enabled in the user’s account. Possible values are: 0, 1. | Optional | 
-| scanners_in_tagset | Specify 1 to distribute the scan to scanner appliances that match the asset tags specified for the scan target. One of these parameters must be specified in a request for an internal scan: iscanner_name, iscanner_id, default_scanner, scanners_in_ag, scanners_in_tagset. When none of these are specified, External scanners are used. valid when the target_from=tags is specified. Possible values are: 0, 1. | Optional | 
+| scanners_in_tagset | Specify 1 to distribute the scan to scanner appliances that match the asset tags specified for the scan target. One of these parameters must be specified in a request for an internal scan: iscanner_name, iscanner_id, default_scanner, scanners_in_ag, scanners_in_tagset. When none of these are specified, external scanners are used. Only valid when the target_from=tags is specified. Possible values are: 0, 1. | Optional | 
 | scanners_in_network | Specify 1 to distribute the scan to all scanner appliances in the network. | Optional | 
 | option_title | The title of the compliance option profile to be used. One of these parameters must be specified in a request: option_title or option_id. These are mutually exclusive and cannot be specified in the same request. | Optional | 
 | option_id | The ID of the compliance option profile to be used. One of these parameters must be specified in a request: option_title or option_id. These are mutually exclusive and cannot be specified in the same request. | Optional | 
@@ -20170,8 +20187,8 @@ launch compliance scans.
 | tag_include_selector |  Select “any” (the default) to include hosts that match at least one of the selected tags. Select “all” to include hosts that match all of the selected tags. Possible values are: all, any. | Optional | 
 | tag_exclude_selector | Select “any” (the default) to exclude hosts that match at least one of the selected tags. Select “all” to exclude hosts that match all of the selected tags. Possible values are: all, any. | Optional | 
 | tag_set_by | Specify “id” (the default) to select a tag set by providing tag IDs. Specify “name” to select a tag set by providing tag names. Possible values are: id, name. | Optional | 
-| tag_set_include | Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
-| tag_set_exclude | Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag name or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_include | Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
+| tag_set_exclude | Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional | 
 | use_ip_nt_range_tags | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in tags. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. Possible values are: 0, 1. | Optional | 
 | ip_network_id | The ID of a network used to filter the IPs/ranges specified in the“ip” parameter. Set to a custom network ID (note this does not filter IPs/ranges specified in “asset_groups” or “asset_group_ids”). Or set to “0” (the default) for the Global Default Network - this is used to scan hosts outside of your custom networks. | Optional | 
 | runtime_http_header | Set a custom value in order to drop defenses (such as logging, IPs, etc) when an authorized scan is being run. The value you enter will be used in the “Qualys-Scan:” header that will be set for many CGI and web application fingerprinting checks. Some discovery and web server fingerprinting checks will not use this header. | Optional | 
@@ -20245,8 +20262,8 @@ Add IP addresses to the subscription.
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.IP.Add.TEXT | unknown | Action result message. | 
-| Qualys.IP.Add.DATETIME | unknown | Date &amp; time of the action | 
+| Qualys.IP.Add.TEXT | String | Action result message. | 
+| Qualys.IP.Add.DATETIME | Date | Date &amp; time of the action. | 
 
 
 #### Command Example
@@ -20299,7 +20316,7 @@ gives you the ability to update IP addresses within the subscription.
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
 | Qualys.IP.Update.TEXT | unknown | Action result message. | 
-| Qualys.IP.Update.DATETIME | unknown | Date &amp; time of the action | 
+| Qualys.IP.Update.DATETIME | unknown | Date &amp; time of the action. | 
 
 
 #### Command Example
@@ -20337,7 +20354,7 @@ Manage your excluded IPs list using the Excluded IP. The IPs in your excluded IP
 | --- | --- | --- |
 | action | Select add/remove/remove_all ips. Possible values are: add, remove, remove_all. | Required | 
 | comment | User-defined notes (up to 1024 characters). | Required | 
-| ips | The IP addresses to be added to the excluded IPs list. Enter a comma separated list of IPv4 singletons or ranges. For example: 10.10.10.13,10.10.10.25-10.10.10.29. | Optional | 
+| ips | The IP addresses to be added to the excluded IPs list. Enter a comm-separated list of IPv4 singletons or ranges. For example: 10.10.10.13,10.10.10.25-10.10.10.29. | Optional | 
 | expiry_days | (Optional when action=add) The number of days the IPs being added to the excluded IPs list will be considered valid for exclusion. When the expiration is reached, the IPs are removed from the list and made available again for scanning. When unspecified, the IPs being added have no expiration and will remain on the list until removed by a user. | Optional | 
 | dg_names | (Optional when action=add) Specify users who will be notified 7 days before hosts are removed from the excluded hosts list (i.e. supply distribution group names as defined in the Qualys UI). | Optional | 
 | network_id | Assign a network ID to the IPs being added to the excluded IPs list. By default, the user’s default network ID is assigned. | Optional | 
@@ -20378,7 +20395,7 @@ Manage your excluded IPs list using the Excluded IP. The IPs in your excluded IP
 
 ### qualys-scheduled-report-launch
 ***
-Launch a scheduled report now
+Launch a scheduled report now.
 
 
 #### Base Command
@@ -20395,7 +20412,9 @@ Launch a scheduled report now
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Launched Report ID. | 
+| Qualys.Report.ID | String | Launched report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the scheduled report launch. | 
 
 
 #### Command Example
@@ -20406,7 +20425,9 @@ Launch a scheduled report now
 {
     "Qualys": {
         "Report": {
-            "ID": "9470649"
+            "DATETIME": "2021-12-20T12:01:38Z",
+            "ID": "10789050",
+            "TEXT": "Report launched successfully."
         }
     }
 }
@@ -20415,14 +20436,14 @@ Launch a scheduled report now
 #### Human Readable Output
 
 >### Launch Scheduled Report
->|ID|
->|---|
->| 9470649 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:01:38Z | 10789050 | Report launched successfully. |
 
 
 ### qualys-report-launch-map
 ***
-Launches a map report
+Launches a map report.
 
 
 #### Base Command
@@ -20448,7 +20469,9 @@ Launches a map report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Launched Map Report ID. | 
+| Qualys.Report.ID | String | Launched map report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the report launch map. | 
 
 
 #### Command Example
@@ -20459,7 +20482,9 @@ Launches a map report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470650"
+            "ID": "9470650",
+            "DATETIME": "2021-12-20T12:01:38Z",
+            "TEXT": "Report launched successfully."
         }
     }
 }
@@ -20468,9 +20493,9 @@ Launches a map report
 #### Human Readable Output
 
 >###  New report launched
->|ID|
->|---|
->| 9470650 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:01:38Z | 9470650 | Report launched successfully. |
 
 
 ### qualys-report-launch-host-based-findings
@@ -20501,7 +20526,9 @@ Run host based findings report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Report ID. | 
+| Qualys.Report.ID | String | Report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the scan based findings. | 
 
 
 #### Command Example
@@ -20512,7 +20539,9 @@ Run host based findings report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470647"
+            "DATETIME": "2021-12-20T12:00:52Z",
+            "ID": "10789047",
+            "TEXT": "New report launched"
         }
     }
 }
@@ -20521,9 +20550,9 @@ Run host based findings report
 #### Human Readable Output
 
 >### Host Based Findings Report Launch
->|ID|
->|---|
->| 9470647 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:52Z | 10789047 | New report launched |
 
 
 ### qualys-report-launch-scan-based-findings
@@ -20553,7 +20582,7 @@ launches a scan report including scan based findings
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Report ID. | 
+| Qualys.Report.ID | String | Report ID. | 
 
 
 #### Command Example
@@ -20564,6 +20593,8 @@ launches a scan report including scan based findings
 {
     "Qualys": {
         "Report": {
+            "DATETIME": "2021-12-20T12:00:52Z",
+            "TEXT": "Launch scan based findings successfully"
             "ID": "9470646"
         }
     }
@@ -20573,9 +20604,9 @@ launches a scan report including scan based findings
 #### Human Readable Output
 
 >### Scan Based Findings Report Launch
->|ID|
->|---|
->| 9470646 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:52Z | 9470646 | Launch scan based findings successfully |
 
 
 ### qualys-report-launch-patch
@@ -20594,7 +20625,7 @@ Run patch report
 | output_format | One output format may be specified. When output_format=pdf is specified, the Secure PDF Distribution may be used. Possible values are: pdf, online, xml, csv. | Required | 
 | report_title | A user-defined report title. The title may have a maximum of 128 characters. For a PCI compliance report, the report title is provided by Qualys and cannot be changed. | Optional | 
 | hide_header | (Valid for CSV format report only). Specify hide_header=1 to omit the header information from the report. By default this information is included. | Optional | 
-| recipient_group_id | pecify users who will receive the email notification when the report is complete (i.e. supply a distribution group ID). Where do I find this ID? Log in to your Qualys account, go to Users &gt; Distribution Groups and select Info for a group in the list. | Optional | 
+| recipient_group_id | Specify users who will receive the email notification when the report is complete (i.e. supply a distribution group ID). Where do I find this ID? Log in to your Qualys account, go to Users &gt; Distribution Groups and select Info for a group in the list. | Optional | 
 | pdf_password | (Optional; Required for secure PDF distribution) The password to be used for encryption. Requirements: - the password must have a minimum of 8 characters (ascii), and a maximum of 32 characters - the password must contain alpha and numeric characters - the password cannot match the password for the user’s Qualys account. - the password must follow the password security guidelines defined for your subscription (log in and go to Subscription Setup—&gt;Security Options). | Optional | 
 | recipient_group | Optional; Optional for secure PDF distribution) The report recipients in the form of one or more distribution groups, as defined using the Qualys UI. Multiple distribution groups are comma separated. A maximum of 50 distribution groups may be entered. Chapter 4 — Report API Launch Report  recipient_group={value}. | Optional | 
 | ips | Specify IPs/ranges to change (override) the report target, as defined in the patch report template. Multiple IPs/ranges are comma separated. When specified, hosts defined in the report template are not included in the report. See also “Using Asset Tags.”. | Optional | 
@@ -20605,7 +20636,9 @@ Run patch report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Report ID. | 
+| Qualys.Report.ID | String | Report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the launch patch. | 
 
 
 #### Command Example
@@ -20616,7 +20649,9 @@ Run patch report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470644"
+            "DATETIME": "2021-12-20T12:00:26Z",
+            "ID": "10789038",
+            "TEXT": "New report launched"
         }
     }
 }
@@ -20625,9 +20660,9 @@ Run patch report
 #### Human Readable Output
 
 >### Patch Report Launch
->|ID|
->|---|
->| 9470644 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:26Z | 10789038 | New report launched |
 
 
 ### qualys-report-launch-remediation
@@ -20646,7 +20681,7 @@ Run remediation report
 | output_format | One output format may be specified. When output_format=pdf is specified, the Secure PDF Distribution may be used. Possible values are: pdf, html, mht, csv. | Required | 
 | report_title | A user-defined report title. The title may have a maximum of 128 characters. For a PCI compliance report, the report title is provided by Qualys and cannot be changed. | Optional | 
 | hide_header | (Valid for CSV format report only). Specify hide_header=1 to omit the header information from the report. By default this information is included. | Optional | 
-| recipient_group_id | pecify users who will receive the email notification when the report is complete (i.e. supply a distribution group ID). Where do I find this ID? Log in to your Qualys account, go to Users &gt; Distribution Groups and select Info for a group in the list. | Optional | 
+| recipient_group_id | Specify users who will receive the email notification when the report is complete (i.e. supply a distribution group ID). Where do I find this ID? Log in to your Qualys account, go to Users &gt; Distribution Groups and select Info for a group in the list. | Optional | 
 | pdf_password | (Optional; Required for secure PDF distribution) The password to be used for encryption. Requirements: - the password must have a minimum of 8 characters (ascii), and a maximum of 32 characters - the password must contain alpha and numeric characters - the password cannot match the password for the user’s Qualys account. - the password must follow the password security guidelines defined for your subscription (log in and go to Subscription Setup—&gt;Security Options). | Optional | 
 | recipient_group | Optional; Optional for secure PDF distribution) The report recipients in the form of one or more distribution groups, as defined using the Qualys UI. Multiple distribution groups are comma separated. A maximum of 50 distribution groups may be entered. Chapter 4 — Report API Launch Report  recipient_group={value}. | Optional | 
 | ips | (Optional for remediation report) Specify IPs/ranges you want to include in the report. Multiple IPs and/or ranges are comma separated. | Optional | 
@@ -20658,7 +20693,9 @@ Run remediation report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Remediation Report ID. | 
+| Qualys.Report.ID | String | Remediation report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the launch remediation. | 
 
 
 #### Command Example
@@ -20669,7 +20706,9 @@ Run remediation report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470643"
+            "DATETIME": "2021-12-20T12:00:23Z",
+            "ID": "10789037",
+            "TEXT": "New report launched"
         }
     }
 }
@@ -20678,9 +20717,9 @@ Run remediation report
 #### Human Readable Output
 
 >### Remediation Report Launch
->|ID|
->|---|
->| 9470643 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:23Z | 10789037 | New report launched |
 
 
 ### qualys-report-launch-compliance
@@ -20711,7 +20750,9 @@ Run compliance report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Compliance Report ID. | 
+| Qualys.Report.ID | String | Compliance report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the launch compliance. | 
 
 
 #### Command Example
@@ -20722,7 +20763,9 @@ Run compliance report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470645"
+            "DATETIME": "2021-12-20T12:00:41Z",
+            "ID": "10789044",
+            "TEXT": "New report launched"
         }
     }
 }
@@ -20731,9 +20774,9 @@ Run compliance report
 #### Human Readable Output
 
 >### Compliance Report Launch
->|ID|
->|---|
->| 9470645 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:41Z | 10789044 | New report launched |
 
 
 ### qualys-report-launch-compliance-policy
@@ -20766,7 +20809,9 @@ Run compliance policy report
 
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
-| Qualys.Report.ID | unknown | Policy Report ID. | 
+| Qualys.Report.ID | String | Policy report ID. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the launch compliance policy. | 
 
 
 #### Command Example
@@ -20777,7 +20822,9 @@ Run compliance policy report
 {
     "Qualys": {
         "Report": {
-            "ID": "9470642"
+            "DATETIME": "2021-12-20T12:00:19Z",
+            "ID": "10789035",
+            "TEXT": "New report launched"
         }
     }
 }
@@ -20786,9 +20833,9 @@ Run compliance policy report
 #### Human Readable Output
 
 >### Policy Report Launch
->|ID|
->|---|
->| 9470642 |
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:00:19Z | 10789035 | New report launched |
 
 
 ### qualys-ip-restricted-list
@@ -20859,7 +20906,7 @@ Get the list of restricted IPs within the user's subscription.
 | **Path** | **Type** | **Description** |
 | --- | --- | --- |
 | Qualys.Restricted.Manage.TEXT | unknown | Action result message. | 
-| Qualys.Restricted.Manage.DATETIME | unknown | Date &amp; time of the action | 
+| Qualys.Restricted.Manage.DATETIME | unknown | Date &amp; time of the action. | 
 | Qualys.Restricted.Manage.ITEM_LIST.ITEM.VALUE | unknown | Status of the restricted ips feature. | 
 
 
@@ -20889,3 +20936,977 @@ Get the list of restricted IPs within the user's subscription.
 #### Human Readable Output
 
 >Successfully added restricted ips
+
+### qualys-schedule-scan-create
+***
+Create a scan schedule in the user’s account.
+
+
+#### Base Command
+
+`qualys-schedule-scan-create`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| scan_title | The scan title. | Required | 
+| ip | A comma-separated list of IP addresses/ranges to be scanned. At most, one of these parameters can be supplied: ip, asset_groups or asset_group_ids. | Optional | 
+| asset_group_ids | A comma-separated list of IDs of asset groups containing the hosts to be scanned. At most, one of these parameters can be supplied: ip, asset_groups or asset_group_ids. | Optional | 
+| asset_groups | A comma-separated list of titles of asset groups containing the hosts to be scanned. At most, one of these parameters can be supplied: ip, asset_groups or asset_group_ids. | Optional | 
+| option_title | The title of the compliance option profile to be used. | Required | 
+| frequency_days | The frequency (days) in which the scan occurs. The value is between 1-365. For example: '1' indicates that the schedule will occur every day. '2' indicates that the schedule will occur every 2 days. At most, one of these parameters can be supplied: 'frequency_days', 'frequency_weeks', 'frequency_months'. | Optional | 
+| frequency_weeks | The frequency (weeks) in which the scan occurs. The value is between 1-52. For example: '1' indicates that the schedule will occur every week. '2' indicates that the schedule will occur every 2 weeks. The argument 'weekdays' is required when frequency_weeks is given. Scan will occur only on specified days given in the 'weekdays' argument. At most, one of these parameters can be supplied: 'frequency_days', 'frequency_weeks', 'frequency_months'. | Optional | 
+| frequency_months | The frequency (months) in which the scan occurs. The value is between 1-12. For example: '1' indicates that the schedule will occur every month. '2' indicates that the schedule will occur every 2 months. Either the argument 'day_of_month' or the arguments 'day_of_week' and 'week_of_month' are required when frequency_months is given. The scan will occur only on specified days given in those arguments At most, one of these parameters can be supplied: 'frequency_days', 'frequency_weeks', 'frequency_months'. | Optional | 
+| weekdays | A comma-separated list of the days when the scan will occur each week. Required when 'frequency_weeks' is given. For example: weekdays='sunday,tuesday' along with 'frequency_weeks=2' means the scan will occur on Sunday and Tuesday every two weeks. Possible values are: sunday, monday, tuesday, wednesday, thursday, friday, saturday. | Optional | 
+| day_of_month | Day of the month the monthly schedule will run on. The value is between 1-31 depending on the month. Only relevant when 'frequency_months' value was given. For example: day_of_month=15 along with frequency_months=2 will result in the scan running every 2 months on the 15th of the month. | Optional | 
+| day_of_week | Day of week that the schedule will run on. The value is between 0-6, where 0 is Sunday, and 6 is Saturday depending on the month. Only relevant when 'frequency_months' value was given. Must be used with 'week_of_month' as well. For example: day_of_week=2, week_of_month=second along with frequency_months=2 will result in the scan running every 2 months on Tuesday in the second week of the month. Possible values are: 0, 1, 2, 3, 4, 5, 6. | Optional | 
+| week_of_month | Comma-separated list of the days of the week that the schedule will run on. The value is between 0-6, where 0 is Sunday, and 6 is Saturday depending on the month. Only relevant when 'frequency_months' value was given. Must be used with 'week_of_month' as well. For example: day_of_week=2, week_of_month=second along with frequency_months=2 will result in the scan running every 2 months on Tuesday in the second week of the month. Possible values are: first, second, third, fourth, last. | Optional | 
+| start_date | The start date of the schedule in the format of mm/dd/yyyy. For example: 12/15/2020. | Required | 
+| start_hour | The start hour of the scheduled scan. Required when 'start_date' is given. The value is between 0-23. | Required | 
+| start_minute | The start minute of the scheduled scan. Required when 'start_date' is given. The value is between 0-59. | Required | 
+| time_zone_code | Time zone code of the given scheduled scan. For example: US-CA for California time zone in the US. Required when 'start_date' is given. | Required | 
+| observe_dst | Whether to observe Daylight Saving Time (DST). Required when start_date is given. This parameter is valid when the time zone code specified in time_zone_code supports DST. To get the list of time zones and their DST support, use the `qualys-time-zone-code` command. Possible values are: yes, no. | Optional | 
+| exclude_ip_per_scan | A comma-separated list of IP addresses/ranges to be excluded from the scan when the scan target is specified as IP addresses (not asset tags). One of the following parameters must be set: 'scanners_in_ag', 'default_scanner'. | Optional | 
+| default_scanner | Specify 1 to use the default scanner in each target asset group. For an Express Lite user, Internal Scanning must be enabled in the user’s account. At most, one of these parameters can be supplied: 'scanners_in_ag', 'default_scanner'. Possible values are: 0, 1. | Optional | 
+| scanners_in_ag | Specify 1 to distribute the scan to the target asset groups’ scanner appliances. Appliances in each asset group are tasked with scanning the IPs in the group. By default, up to 5 appliances per group will be used and this can be configured for your account (contact your Account Manager or Support). For an Express Lite user, Internal Scanning must be enabled in the user’s account. At most, one of these parameters can be supplied: 'scanners_in_ag', 'default_scanner'. Possible values are: 0, 1. | Optional | 
+target_from | Specify "assets" (the default) when your scan target will include IP addresses/ranges and/or asset groups. Specify "tags" when your scan target will include asset tags. | Optional | 
+tag_include_selector | Select "any" (the default) to include hosts that match at least one of the selected tags. Select "all" to include hosts that match all of the selected tags. | Optional |
+tag_exclude_selector | Select "any" (the default) to exclude hosts that match at least one of the selected tags. Select "all" to exclude hosts that match all of the selected tags. | Optional |
+tag_set_by | Specify "id" (the default) to select a tag set by providing tag IDs. Specify "name" to select a tag set by providing tag names. | Optional |
+tag_set_include | Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional |
+tag_set_exclude | Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional |
+use_ip_nt_range_tags_include | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in the tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. | Optional |
+use_ip_nt_range_tags_exclude | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to exclude all IP addresses defined in the tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. | Optional |
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.ScheduleScan.ID | String | ID of the new scheduled scan. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the scheduled scan creation. | 
+
+
+#### Command Example
+```!qualys-schedule-scan-create option_title="Initial Options" scan_title="TestScheduleScan123" start_date=12/15/2023 start_hour=2 start_minute=2 time_zone_code=US-CA asset_group_ids=493238 frequency_days=1 default_scanner=1```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "ScheduleScan": {
+            "DATETIME": "2021-12-20T12:02:25Z",
+            "ID": "783970",
+            "TEXT": "New scan scheduled successfully"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Schedule Scan Create
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:02:25Z | 783970 | New scan scheduled successfully |
+
+
+### qualys-schedule-scan-update
+***
+Updates a scan schedule in the user’s account.
+
+
+#### Base Command
+
+`qualys-schedule-scan-update`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| id | The scan ID to update. The ID can be retrieved by running the 'qualys-schedule-scan-list' command, and using the ID field. | Required | 
+| scan_title | The scan title. | Optional | 
+| ip | A comma-separated list of IP addresses/ranges to be scanned. At most, one of these parameters can be supplied: ip, asset_groups or asset_group_ids. | Optional | 
+| asset_group_ids | A comma-separated list of IDs of asset groups containing the hosts to be scanned. At most, one of these parameters can be supplied: ip, asset_groups or asset_group_ids. | Optional | 
+| asset_groups | A comma-separated list of titles of asset groups containing the hosts to be scanned. At most, one of these parameters can be supplied: ip, asset_groups or asset_group_ids. | Optional | 
+| frequency_days | The frequency (days) in which the scan occurs. The value is between 1-365. For example: '1' indicates that the schedule will occur every day. '2' indicates that the schedule will occur every 2 days. At most, one of these parameters can be supplied: 'frequency_days', 'frequency_weeks', 'frequency_months'. | Optional | 
+| frequency_weeks | The frequency (weeks) in which the scan occurs. The value is between 1-52. For example: '1' indicates that the schedule will occur every week. '2' indicates that the schedule will occur every 2 weeks. The argument 'weekdays' is required when frequency_weeks is given. Scan will occur only on specified days given in the 'weekdays' argument. At most, one of these parameters can be supplied: 'frequency_days', 'frequency_weeks', 'frequency_months'. | Optional | 
+| frequency_months | The frequency (months) in which the scan occurs. The value is between 1-12. For example: '1' indicates that the schedule will occur every month. '2' indicates that the schedule will occur every 2 months. Either the argument 'day_of_month' or the arguments 'day_of_week' and 'week_of_month' are required when frequency_months is given. The scan will occur only on specified days given in those arguments At most, one of these parameters can be supplied: 'frequency_days', 'frequency_weeks', 'frequency_months'. | Optional | 
+| weekdays | A comma-separated list of the days when the scan will occur each week. Required when 'frequency_weeks' is given. For example: weekdays='sunday,tuesday' along with 'frequency_weeks=2' means the scan will occur on Sunday and Tuesday every two weeks. Possible values are: sunday, monday, tuesday, wednesday, thursday, friday, saturday. | Optional | 
+| day_of_month | Day of the month the monthly schedule will run on. The value is between 1-31 depending on the month. Only relevant when 'frequency_months' value was given. For example: day_of_month=15 along with frequency_months=2 will result in the scan running every 2 months on the 15th of the month. | Optional | 
+| day_of_week | Day of week that the schedule will run on. The value is between 0-6, where 0 is Sunday, and 6 is Saturday depending on the month. Only relevant when 'frequency_months' value was given. Must be used with 'week_of_month' as well. For example: day_of_week=2, week_of_month=second along with frequency_months=2 will result in the scan running every 2 months on Tuesday in the second week of the month. Possible values are: 0, 1, 2, 3, 4, 5, 6. | Optional | 
+| week_of_month | Comma-separated list of the days of the week that the schedule will run on. The value is between 0-6, where 0 is Sunday, and 6 is Saturday depending on the month. Only relevant when 'frequency_months' value was given. Must be used with 'week_of_month' as well. For example: day_of_week=2, week_of_month=second along with frequency_months=2 will result in the scan running every 2 months on Tuesday in the second week of the month. Possible values are: first, second, third, fourth, last. | Optional | 
+| start_date | The start date of the schedule in the format of mm/dd/yyyy. For example: 12/15/2020. | Optional | 
+| start_hour | The start hour of the scheduled scan. Required when 'start_date' is given. The value is between 0-23. | Optional | 
+| start_minute | The start minute of the scheduled scan. Required when 'start_date' is given. The value is between 0-59. | Optional | 
+| time_zone_code | Time zone code of the given scheduled scan. For example: US-CA for California time zone in the US. Required when 'start_date' is given. | Optional | 
+| observe_dst | Whether to observe Daylight Saving Time (DST). Required when start_date is given. This parameter is valid when the time zone code specified in time_zone_code supports DST. To get the list of time zones and their DST support, use the `qualys-time-zone-code` command. Possible values are: yes, no. | Optional | 
+| exclude_ip_per_scan | A comma-separated list of IP addresses/ranges to be excluded from the scan when the scan target is specified as IP addresses (not asset tags). One of the following parameters must be set: 'scanners_in_ag', 'default_scanner'. | Optional | 
+| default_scanner | Specify 1 to use the default scanner in each target asset group. For an Express Lite user, Internal Scanning must be enabled in the user’s account. At most, one of these parameters can be supplied: 'scanners_in_ag', 'default_scanner'. Possible values are: 0, 1. | Optional | 
+| scanners_in_ag | Specify 1 to distribute the scan to the target asset groups’ scanner appliances. Appliances in each asset group are tasked with scanning the IPs in the group. By default, up to 5 appliances per group will be used and this can be configured for your account (contact your Account Manager or Support). For an Express Lite user, Internal Scanning must be enabled in the user’s account. At most, one of these parameters can be supplied: 'scanners_in_ag', 'default_scanner'. Possible values are: 0, 1. | Optional | 
+| active | Whether the scheduled scan is activated. Possible values are: 0, 1. | Optional | 
+target_from | Specify "assets" (the default) when your scan target will include IP addresses/ranges and/or asset groups. Specify "tags" when your scan target will include asset tags. | Optional | 
+tag_include_selector | Select "any" (the default) to include hosts that match at least one of the selected tags. Select "all" to include hosts that match all of the selected tags. | Optional |
+tag_exclude_selector | Select "any" (the default) to exclude hosts that match at least one of the selected tags. Select "all" to exclude hosts that match all of the selected tags. | Optional |
+tag_set_by | Specify "id" (the default) to select a tag set by providing tag IDs. Specify "name" to select a tag set by providing tag names. | Optional |
+tag_set_include | Specify a tag set to include. Hosts that match these tags will be included. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional |
+tag_set_exclude | Specify a tag set to exclude. Hosts that match these tags will be excluded. You identify the tag set by providing tag names or IDs. Multiple entries are comma separated. | Optional |
+use_ip_nt_range_tags_include | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to scan all IP addresses defined in the tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. | Optional |
+use_ip_nt_range_tags_exclude | Specify “0” (the default) to select from all tags (tags with any tag rule). Specify “1” to exclude all IP addresses defined in the tag selection. When this is specified, only tags with the dynamic IP address rule called “IP address in Network Range(s)” can be selected. | Optional |
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.ScheduleScan.ID | String | ID of the scheduled scan to be updated. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the scheduled scan update. | 
+
+
+#### Command Example
+```!qualys-schedule-scan-update id=783969 active=0```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "ScheduleScan": {
+            "DATETIME": "2021-12-20T12:02:28Z",
+            "ID": "783969",
+            "TEXT": "Edit scheduled scan Completed successfully"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Schedule Scan Update
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:02:28Z | 783969 | Edit scheduled scan Completed successfully |
+
+
+### qualys-asset-group-add
+***
+Create a new asset group.
+
+
+#### Base Command
+
+`qualys-asset-group-add`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| title | The asset group title to add. | Required | 
+| network_id | Restrict the request to a certain custom network ID. | Optional | 
+| ips | A comma-separated list of IP address/ranges to add to an asset group. An IP range is specified with a hyphen (for example, 10.10.10.1-10.10.10.100). | Optional | 
+| domains | A comma-separated list of domains to add to an asset group. Do not enter "www." at the start of the domain name. | Optional | 
+| dns_names | A comma-separated list of DNS names to add to an asset group. | Optional | 
+| netbios_names | A comma-separated list of NETBIOS names to add to an asset group. | Optional | 
+| cvss_enviro_td | The CVSS environment target distribution to add. Possible values are: high, medium, low, none. | Optional | 
+| cvss_enviro_cr | The CVSS environment confidentiality requirement to add. Possible values are: high, medium, low. | Optional | 
+| cvss_enviro_ir | The CVSS environment integrity requirement to add. Possible values are: high, medium, low. | Optional | 
+| cvss_enviro_ar | The CVSS environment availability requirement to add. Possible values are: high, medium, low. | Optional | 
+| appliance_ids | A comma-separated list of appliance IDs to add to an asset group. | Optional | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.AssetGroup.ID | String | Asset group ID. | 
+| Qualys.AssetGroup.DATETIME | Date | Date the command was executed. | 
+| Qualys.AssetGroup.TEXT | String | Qualys response for the asset group creation. | 
+
+
+#### Command Example
+```!qualys-asset-group-add title=Test-Asset-Group123 ips="1.1.1.1"```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "AssetGroup": {
+            "DATETIME": "2021-12-20T12:02:07Z",
+            "ID": "2886259",
+            "TEXT": "Asset Group successfully added."
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Asset Group Add
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:02:07Z | 2886259 | Asset Group successfully added. |
+
+
+### qualys-asset-group-edit
+***
+Update an asset group.
+
+
+#### Base Command
+
+`qualys-asset-group-edit`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| set_title | The new asset group title. | Optional | 
+| id | The ID of the asset group to edit. The ID of asset groups can be retrieved via running the `qualys-group-list` command and using its ID field. | Required | 
+| add_ips | A comma-separated list of IP address/ranges to add to an asset group. An IP range is specified with a hyphen (for example, 10.10.10.1-10.10.10.100). | Optional | 
+| set_ips | A comma-separated list of IP address/ranges of an asset group to set. An IP range is specified with a hyphen (for example, 10.10.10.1-10.10.10.100). | Optional | 
+| remove_ips | A comma-separated list of IP addresses/ranges to remove from an asset group. An IP range is specified with a hyphen (for example, 10.10.10.1-10.10.10.100). | Optional | 
+| add_domains | A comma-separated list of domains to add to an asset group. Do not enter "www." at the start of the domain name. | Optional | 
+| set_domains | A comma-separated list of domains of an asset group to set. Do not enter "www." at the start of the domain name. | Optional | 
+| remove_domains | A comma-separated list of domains to remove from an asset group. Do not enter "www." at the start of the domain name. | Optional | 
+| add_dns_names | A comma-separated list of DNS names to add to an asset group. | Optional | 
+| set_dns_names | A comma-separated list of DNS names of asset group to set. | Optional | 
+| remove_dns_names | A comma-separated list of DNS names to remove from an asset group. | Optional | 
+| add_netbios_names | A comma-separated list of NETBIOS names to add to an asset group. | Optional | 
+| set_netbios_names | A comma-separated list of NETBIOS names of an asset group to set. | Optional | 
+| remove_netbios_names | A comma-separated list of NETBIOS names to delete from an asset group. | Optional | 
+| set_cvss_enviro_td | The CVSS environment target distribution to set. Possible values are: high, medium, low, none. | Optional | 
+| set_cvss_enviro_cr | The CVSS environment confidentiality requirement to set. Possible values are: high, medium, low. | Optional | 
+| set_cvss_enviro_ir | The CVSS environment integrity requirement to set. Possible values are: high, medium, low. | Optional | 
+| set_cvss_enviro_ar | The CVSS environment availability requirement to set. Possible values are: high, medium, low. | Optional | 
+| add_appliance_ids | A comma-separated list of appliance IDs to add to an asset group. | Optional | 
+| set_appliance_ids | A comma-separated list of appliance IDs of an asset group to set. | Optional | 
+| remove_appliance_ids | A comma-separated list of appliance IDs to remove from an asset group. | Optional | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.AssetGroup.ID | String | Asset group ID. | 
+| Qualys.AssetGroup.DATETIME | Date | Date the command was executed. | 
+| Qualys.AssetGroup.TEXT | String | Qualys response for the asset group update. | 
+
+
+#### Command Example
+```!qualys-asset-group-edit id=2886258 add_ips="1.1.1.1"```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "AssetGroup": {
+            "DATETIME": "2021-12-20T12:02:13Z",
+            "ID": "2886258",
+            "TEXT": "Asset Group Updated Successfully"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Asset Group Edit
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:02:13Z | 2886258 | Asset Group Updated Successfully |
+
+
+### qualys-asset-group-delete
+***
+Delete an asset group.
+
+
+#### Base Command
+
+`qualys-asset-group-delete`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| id | Asset group ID to delete. ID of asset groups can be retrieved via running the `qualys-group-list` command and using its ID field. | Required | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.AssetGroup.ID | String | Asset group ID. | 
+| Qualys.AssetGroup.DATETIME | Date | Date the command was executed. | 
+| Qualys.AssetGroup.TEXT | String | Qualys response for the asset group deletion. | 
+
+
+#### Command Example
+```!qualys-asset-group-delete id=2886258```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "AssetGroup": {
+            "DATETIME": "2021-12-20T12:02:20Z",
+            "ID": "2886258",
+            "TEXT": "Asset Group Deleted Successfully"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Asset Group Delete
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:02:20Z | 2886258 | Asset Group Deleted Successfully |
+
+
+### qualys-schedule-scan-delete
+***
+Delete a scheduled scan.
+
+
+#### Base Command
+
+`qualys-schedule-scan-delete`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| id | Scheduled Scan ID to delete. The ID can be retrieved via running the `qualys-schedule-scan-list` command, and using the ID field. | Required | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.ScheduleScan.ID | String | ID of the scheduled scan to be deleted. | 
+| Qualys.ScheduleScan.DATETIME | Date | Date the command was executed. | 
+| Qualys.ScheduleScan.TEXT | String | Qualys response for the scheduled scan deletion. | 
+
+
+#### Command Example
+```!qualys-schedule-scan-delete id=783969```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "ScheduleScan": {
+            "DATETIME": "2021-12-20T12:02:31Z",
+            "ID": "783969",
+            "TEXT": "Schedule scan deleted successfully"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Schedule Scan Delete
+>|DATETIME|ID|TEXT|
+>|---|---|---|
+>| 2021-12-20T12:02:31Z | 783969 | Schedule scan deleted successfully |
+
+
+### qualys-time-zone-code
+***
+Gets a list of the supported time zone codes.
+
+
+#### Base Command
+
+`qualys-time-zone-code`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.TimeZone.DST_SUPPORTED | String | Whether Daylight Saving Time \(DST\) is supported. | 
+| Qualys.TimeZone.TIME_ZONE_CODE | String | Time zone code. | 
+| Qualys.TimeZone.TIME_ZONE_DETAILS | String | Timezone code details. | 
+
+
+#### Command Example
+```!qualys-time-zone-code```
+
+#### Context Example
+```json
+{
+    "Qualys": {
+        "TimeZone": [
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "AS",
+                "TIME_ZONE_DETAILS": "(GMT -11:00) American Samoa"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "UM2",
+                "TIME_ZONE_DETAILS": "(GMT -11:00) Midway Islands (U.S.)"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "NU",
+                "TIME_ZONE_DETAILS": "(GMT -11:00) Niue"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "CK",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) Cook Islands"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "PF2A",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) French Polynesia, Austral Islands"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "PF",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) French Polynesia, Society Islands (including Tahiti)"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "PF2B",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) French Polynesia, Tuamotu Archipelago"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "UM1",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) Johnston Atoll (U.S.)"
+            },
+            {
+                "DST_SUPPORTED": "1",
+                "TIME_ZONE_CODE": "US-AK1",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) United States, Alaska (Aleutian Islands)"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "US-HI",
+                "TIME_ZONE_DETAILS": "(GMT -10:00) United States, Hawaii"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "PF1",
+                "TIME_ZONE_DETAILS": "(GMT -09:30) French Polynesia, Marquesas Islands"
+            },
+            {
+                "DST_SUPPORTED": "0",
+                "TIME_ZONE_CODE": "PF3",
+                "TIME_ZONE_DETAILS": "(GMT -09:00) French Polynesia, Gambier Islands"
+            },
+            {
+                "DST_SUPPORTED": "1",
+                "TIME_ZONE_CODE": "US-AK",
+                "TIME_ZONE_DETAILS": "(GMT -09:00) United States, Alaska"
+            },
+            {
+                "DST_SUPPORTED": "1",
+                "TIME_ZONE_CODE": "CA-BC",
+                "TIME_ZONE_DETAILS": "(GMT -08:00) Canada, British Columbia (Pacific Standard Time)"
+            }
+        ]
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Time Zone Codes
+>
+>|DST_SUPPORTED|TIME_ZONE_CODE|TIME_ZONE_DETAILS|
+>|---|---|---|
+>| 0 | AS | (GMT -11:00) American Samoa |
+>| 0 | UM2 | (GMT -11:00) Midway Islands (U.S.) |
+>| 0 | NU | (GMT -11:00) Niue |
+>| 0 | CK | (GMT -10:00) Cook Islands |
+>| 0 | PF2A | (GMT -10:00) French Polynesia, Austral Islands |
+>| 0 | PF | (GMT -10:00) French Polynesia, Society Islands (including Tahiti) |
+>| 0 | PF2B | (GMT -10:00) French Polynesia, Tuamotu Archipelago |
+>| 0 | UM1 | (GMT -10:00) Johnston Atoll (U.S.) |
+>| 1 | US-AK1 | (GMT -10:00) United States, Alaska (Aleutian Islands) |
+>| 0 | US-HI | (GMT -10:00) United States, Hawaii |
+>| 0 | PF1 | (GMT -09:30) French Polynesia, Marquesas Islands |
+>| 0 | PF3 | (GMT -09:00) French Polynesia, Gambier Islands |
+>| 1 | US-AK | (GMT -09:00) United States, Alaska |
+>| 1 | CA-BC | (GMT -08:00) Canada, British Columbia (Pacific Standard Time) |
+
+
+### qualys-host-list-detection
+***
+Get a list of hosts with the hosts latest vulnerability data. The list is based on the host based scan data available in the user’s account.
+
+
+#### Base Command
+
+`qualys-host-list-detection`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| ids | A comma-separated list of host IDs/ranges. A host ID range is specified with a hyphen (for example, 190-400). Valid host IDs are required. | Optional | 
+| ips | A comma-separated list of host IP addresses/ranges. An IP address range is specified with a hyphen (for example, 10.10.30.1-10.10.30.50). | Optional | 
+| qids | A comma-separated list of valid detection record QIDs. A range is specified with a dash (for example, 68518-68522). | Optional | 
+| severities | A comma-separated list of severity levels. A range is specified with a dash (for example, 1-5 where 1 is low and 5 is high). | Optional | 
+| use_tags | Specify 0 (the default) to select hosts based on IP addresses/ranges and/or asset groups. Specify 1 to select hosts based on asset tags. Possible values are: 0, 1. | Optional | 
+| tag_set_by | (Optional when use_tags=1) Specify “id” (the default) to select a tag set by providing tag IDs. Specify “name” to select a tag set by providing tag names. Possible values are: id, name. | Optional | 
+| tag_include_selector | (Optional when use_tags=1) Specify “any” (the default) to include hosts that match at least one of the selected tags. Specify “all” to include hosts that match all of the selected tags. Possible values are: any, all. | Optional | 
+| tag_exclude_selector | (Optional when use_tags=1) Specify “any” (the default) to exclude hosts that match at least one of the selected tags. Specify “all” to exclude hosts that match all of the selected tags. Possible values are: any, all. | Optional | 
+| tag_set_include | (Optional when use_tags=1) Specify a comma-separated list of tag names or IDs to include hosts that match these tags. | Optional | 
+| tag_set_exclude | (Optional when use_tags=1) Specify a comma-separated list of tag names or IDs for which to exclude hosts that match the tags. | Optional | 
+| detection_processed_before | Specify the date before which to retrieve detections vulnerability scan results that were processed. Specify the date in YYYY-MMDD[THH:MM:SSZ] format (UTC/GMT), for example, “2016-09-12” or “2016-09-12T23:15:00Z”. | Optional | 
+| detection_processed_after | Specify the date after which to retrieve detections vulnerability scan results that were processed. Specify the date in YYYY-MMDD[THH:MM:SSZ] format (UTC/GMT), for example, “2016-09-12” or “2016-09-12T23:15:00Z”. | Optional | 
+| vm_scan_since | Show hosts that were last scanned for vulnerabilities since the specified date and time (optional). Hosts that were the target of a vulnerability scan since the date/time will be shown. Date/time is specified in the following format: YYYY-MM-DD[THH:MM:SSZ] (UTC/GMT). Permissions: An Auditor cannot specify this parameter. | Optional | 
+| no_vm_scan_since | Show hosts not scanned since the specified date and time (optional). The date/time is specified in the following format: YYYY-MMDD[THH:MM:SSZ] format (UTC/GMT), for example, “2007-07-01” or “2007-01-25T23:12:00Z”. Permissions - An Auditor cannot specify this parameter. | Optional | 
+| truncation_limit | Specify the maximum number of host records processed per request. When not specified, the truncation limit is set to 1000 host records. You may specify a value less than the default (1-999) or greater than the default (1001-1000000). | Optional | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.HostDetections.ID | String | Host detection ID. | 
+| Qualys.HostDetections.IP | String | Host detection IP address. | 
+| Qualys.HostDetections.TRACKING_METHOD | String | Tracking method. | 
+| Qualys.HostDetections.OS | String | Host operating system. | 
+| Qualys.HostDetections.DNS | String | Host DNS. | 
+| Qualys.HostDetections.DNS_DATA.HOSTNAME | String | DNS data host name. | 
+| Qualys.HostDetections.DNS_DATA.DOMAIN | Unknown | DNS data domain. | 
+| Qualys.HostDetections.DNS_DATA.FQDN | Unknown | DNS data FQDN. | 
+| Qualys.HostDetections.NETBIOS | String | Netbios. | 
+| Qualys.HostDetections.QG_HOSTID | String | QG host ID. | 
+| Qualys.HostDetections.LAST_SCAN_DATETIME | Date | Last scan date. | 
+| Qualys.HostDetections.LAST_VM_SCANNED_DATE | Date | Last VM scan date. | 
+| Qualys.HostDetections.LAST_VM_SCANNED_DURATION | String | Last VM scan duration. | 
+| Qualys.HostDetections.LAST_PC_SCANNED_DATE | Date | Last PC scan date. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.QID | String | Detection QID. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.TYPE | String | Detection type. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.SEVERITY | String | Detection severity. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.SSL | String | Detection SSL. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.RESULTS | String | Detection results. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.STATUS | String | Detection status. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.FIRST_FOUND_DATETIME | Date | Date detection was first found. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.LAST_FOUND_DATETIME | Date | Date detection was last found. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.TIMES_FOUND | String | Number of times detection was found. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.LAST_TEST_DATETIME | Date | Date detection was last tested. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.LAST_UPDATE_DATETIME | Date | Date detection was last updated. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.IS_IGNORED | String | Whether detection is ignored. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.IS_DISABLED | String | Whether detection is disabled. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.LAST_PROCESSED_DATETIME | Date | Date detection was last processed. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.PORT | String | Detection port. | 
+| Qualys.HostDetections.DETECTION_LIST.DETECTION.PROTOCOL | String | Detection protocol. | 
+
+#### Command example
+```!qualys-host-list-detection truncation_limit=2```
+#### Context Example
+```json
+{
+    "Qualys": {
+        "HostDetections": [
+            {
+                "DETECTION_LIST": {
+                    "DETECTION": [
+                        {
+                            "FIRST_FOUND_DATETIME": "2017-06-08T09:17:08Z",
+                            "IS_DISABLED": "0",
+                            "IS_IGNORED": "0",
+                            "LAST_FOUND_DATETIME": "2018-10-25T19:13:11Z",
+                            "LAST_PROCESSED_DATETIME": "2018-10-25T19:13:37Z",
+                            "LAST_TEST_DATETIME": "2018-10-25T19:13:11Z",
+                            "LAST_UPDATE_DATETIME": "2018-10-25T19:13:37Z",
+                            "PORT": "3389",
+                            "PROTOCOL": "tcp",
+                            "QID": "38170",
+                            "RESULTS": "Certificate #0 CN=WIN-2IDQKTU63RC (WIN-2IDQKTU63RC) doesn&apos;t resolve",
+                            "SEVERITY": "2",
+                            "SSL": "1",
+                            "STATUS": "Active",
+                            "TIMES_FOUND": "396",
+                            "TYPE": "Confirmed"
+                        },
+                        {
+                            "FIRST_FOUND_DATETIME": "2017-06-08T09:17:08Z",
+                            "IS_DISABLED": "0",
+                            "IS_IGNORED": "0",
+                            "LAST_FOUND_DATETIME": "2018-10-25T19:13:11Z",
+                            "LAST_PROCESSED_DATETIME": "2018-10-25T19:13:37Z",
+                            "LAST_TEST_DATETIME": "2018-10-25T19:13:11Z",
+                            "LAST_UPDATE_DATETIME": "2018-10-25T19:13:37Z",
+                            "PORT": "3389",
+                            "PROTOCOL": "tcp",
+                            "QID": "38173",
+                            "RESULTS": "Certificate #0 CN=WIN-2IDQKTU63RC unable to get local issuer certificate",
+                            "SEVERITY": "2",
+                            "SSL": "1",
+                            "STATUS": "Active",
+                            "TIMES_FOUND": "396",
+                            "TYPE": "Confirmed"
+                        },
+                    ]
+                },
+                "DNS": "xxx",
+                "DNS_DATA": {
+                    "DOMAIN": null,
+                    "FQDN": null,
+                    "HOSTNAME": "xxx"
+                },
+                "ID": "123",
+                "IP": "1.1.1.1",
+                "LAST_PC_SCANNED_DATE": "2018-07-08T22:03:23Z",
+                "LAST_SCAN_DATETIME": "2018-10-25T19:13:37Z",
+                "LAST_VM_SCANNED_DATE": "2018-10-25T19:13:11Z",
+                "LAST_VM_SCANNED_DURATION": "1083",
+                "NETBIOS": "WIN-2IDQKTU63RC",
+                "OS": "Windows 2008 R2/7",
+                "QG_HOSTID": "a30ba2e0-1e90-4f16-b755-2db8f44b67a7",
+                "TRACKING_METHOD": "EC2"
+            },
+            {
+                "DETECTION_LIST": {
+                    "DETECTION": [
+                        {
+                            "FIRST_FOUND_DATETIME": "2018-05-14T13:54:45Z",
+                            "IS_DISABLED": "0",
+                            "IS_IGNORED": "0",
+                            "LAST_FOUND_DATETIME": "2018-10-25T19:11:35Z",
+                            "LAST_PROCESSED_DATETIME": "2018-10-25T19:12:25Z",
+                            "LAST_TEST_DATETIME": "2018-10-25T19:11:35Z",
+                            "LAST_UPDATE_DATETIME": "2018-10-25T19:12:25Z",
+                            "QID": "70000",
+                            "RESULTS": "AMAZON-544DB96A",
+                            "SEVERITY": "2",
+                            "SSL": "0",
+                            "STATUS": "Active",
+                            "TIMES_FOUND": "59",
+                            "TYPE": "Confirmed"
+                        },
+                        {
+                            "FIRST_FOUND_DATETIME": "2018-05-14T13:54:45Z",
+                            "IS_DISABLED": "0",
+                            "IS_IGNORED": "0",
+                            "LAST_FOUND_DATETIME": "2018-10-25T19:11:35Z",
+                            "LAST_PROCESSED_DATETIME": "2018-10-25T19:12:25Z",
+                            "LAST_TEST_DATETIME": "2018-10-25T19:11:35Z",
+                            "LAST_UPDATE_DATETIME": "2018-10-25T19:12:25Z",
+                            "QID": "70001",
+                            "RESULTS": "Device Name\tComment\tType\nIPC$\tRemote IPC\t-2147483645\nC$\tDefault share\t-2147483648\nADMIN$\tRemote Admin\t-2147483648",
+                            "SEVERITY": "3",
+                            "SSL": "0",
+                            "STATUS": "Active",
+                            "TIMES_FOUND": "59",
+                            "TYPE": "Confirmed"
+                        },
+                        {
+                            "FIRST_FOUND_DATETIME": "2018-05-14T13:54:45Z",
+                            "IS_DISABLED": "0",
+                            "IS_IGNORED": "0",
+                            "LAST_FOUND_DATETIME": "2018-10-25T19:11:35Z",
+                            "LAST_PROCESSED_DATETIME": "2018-10-25T19:12:25Z",
+                            "LAST_TEST_DATETIME": "2018-10-25T19:11:35Z",
+                            "LAST_UPDATE_DATETIME": "2018-10-25T19:12:25Z",
+                            "QID": "90043",
+                            "SEVERITY": "3",
+                            "SSL": "0",
+                            "STATUS": "Active",
+                            "TIMES_FOUND": "59",
+                            "TYPE": "Potential"
+                        },
+                    ]
+                },
+                "DNS": "xxx",
+                "DNS_DATA": {
+                    "DOMAIN": null,
+                    "FQDN": null,
+                    "HOSTNAME": "xxx"
+                },
+                "ID": "1234",
+                "IP": "1.1.1.1",
+                "LAST_PC_SCANNED_DATE": "2018-07-08T22:03:23Z",
+                "LAST_SCAN_DATETIME": "2018-10-25T19:12:25Z",
+                "LAST_VM_SCANNED_DATE": "2018-10-25T19:11:35Z",
+                "LAST_VM_SCANNED_DURATION": "987",
+                "NETBIOS": "AMAZON-544DB96A",
+                "OS": "Windows 2003 R2 Service Pack 2",
+                "QG_HOSTID": "8725d236-7f5b-41e1-b795-fa67e3adc108",
+                "TRACKING_METHOD": "EC2"
+            }
+        ]
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Host Detection List
+>
+>|ID|IP|DNS_DATA|38170|38173|38601|38628|38657|70000|90882|
+>|---|---|---|---|---|---|---|---|---|---|
+>| 123 | 1.1.1.1 | HOSTNAME: xxx | Certificate #0 CN=WIN-2IDQKTU63RC (WIN-2IDQKTU63RC) doesn&apos;t resolve | Certificate #0 CN=WIN-2IDQKTU63RC unable to get local issuer certificate | CIPHER	KEY-EXCHANGE	AUTHENTICATION	MAC	ENCRYPTION(KEY-STRENGTH)	GRADE<br/>TLSv1 WITH RC4 CIPHERS IS SUPPORTED	 	 	 	 	 <br/>RC4-MD5	RSA	RSA	MD5	RC4(128)	MEDIUM<br/>RC4-SHA	RSA	RSA	SHA1	RC4(128)	MEDIUM<br/>TLSv1.1 WITH RC4 CIPHERS IS SUPPORTED	 	 	 	 	 <br/>RC4-MD5	RSA	RSA	MD5	RC4(128)	MEDIUM<br/>RC4-SHA	RSA	RSA	SHA1	RC4(128)	MEDIUM<br/>TLSv1.2 WITH RC4 CIPHERS IS SUPPORTED	 	 	 	 	 <br/>RC4-MD5	RSA	RSA	MD5	RC4(128)	MEDIUM<br/>RC4-SHA	RSA	RSA	SHA1	RC4(128)	MEDIUM | TLSv1.0 is supported | CIPHER	KEY-EXCHANGE	AUTHENTICATION	MAC	ENCRYPTION(KEY-STRENGTH)	GRADE<br/>TLSv1 WITH 64-BIT CBC CIPHERS IS SUPPORTED	 	 	 	 	 <br/>DES-CBC3-SHA	RSA	RSA	SHA1	3DES(168)	MEDIUM<br/>TLSv1.1 WITH 64-BIT CBC CIPHERS IS SUPPORTED	 	 	 	 	 <br/>DES-CBC3-SHA	RSA	RSA	SHA1	3DES(168)	MEDIUM<br/>TLSv1.2 WITH 64-BIT CBC CIPHERS IS SUPPORTED	 	 	 	 	 <br/>DES-CBC3-SHA	RSA	RSA	SHA1	3DES(168)	MEDIUM | WIN-2IDQKTU63RC | RDP Supported Encryption methods:  RC4(40 bit),RC4(56 bit) |
+>### Host Detection List
+>
+>|ID| IP      | DNS_DATA      |70000|70001|90882|90883|105500|105501|105632|
+>|---------|---------------|---|---|---|---|---|---|---|---|
+>| 1234 | 1.1.1.1 | HOSTNAME: xxx | AMAZON-544DB96A | Device Name	Comment	Type<br/>IPC$	Remote IPC	-2147483645<br/>C$	Default share	-2147483648<br/>ADMIN$	Remote Admin	-2147483648 | RDP Supported Encryption methods:  RC4(40 bit),RC4(56 bit) | RDP Public key is 512 bits long. | QID: 105500 detected on port 3389 over TCP. | QID: 105501 detected on port 3389 over TCP. | EOL/Obsolete Operating System : Windows Server 2003 R2 Detected |
+
+### qualys-host-update
+***
+Update host attributes using new update parameters.
+
+
+#### Base Command
+
+`qualys-host-update`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| ids | A comma-separated list of host IDs/ranges to update. A host ID range is specified with a hyphen (for example, 190-400). Valid host IDs are required. Either the `ips` or `ids` parameter must be supplied. IDs or IPs can be retrieved via running the `qualys-host-list-detection` command, using the ID field or IPs field. | Optional | 
+| ips | A comma-separated list of host IP addresses/ranges to add to, remove from or replace in the restricted IPs list. An IP range is specified with a hyphen (for example, 10.10.30.1-10.10.30.50). Either the `ips` or `ids` parameter must be supplied. | Optional | 
+| network_id | (Valid only when the Network Support feature is enabled for the user’s account.) The network ID of the custom network for which to restrict the request. When unspecified, defaults to Global Default Network. | Optional | 
+| host_dns | The DNS hostname for the IP you want to update. A single IP must be specified in the same request and the IP will only be updated if it matches the hostname specified. | Optional | 
+| host_netbios | The NetBIOS hostname for the IP you want to update. A single IP must be specified in the same request and the IP will only be updated if it matches the hostname specified. | Optional | 
+| tracking_method | Show only IP addresses/ranges which have a certain tracking method. Possible values are: IP, DNS, NETBIOS. | Optional | 
+| new_tracking_method | The new tracking method. Note - You cannot change the tracking method to EC2 or AGENT. If an IP is already tracked by EC2 or AGENT, you cannot change the tracking method to something else. Possible values are: IP, DNS, NETBIOS. | Optional | 
+| new_owner | The new owner of the host asset(s). The owner must be a Manager. Another user (Unit Manager, Scanner, Reader) can be the owner if the IP address is in the user’s account. | Optional | 
+| new_comment | The user-defined comments. Specify new comments for the host asset(s). | Optional | 
+| new_ud1 | Change value for user-defined field 1. You can specify a maximum of 128 characters (ASCII) for each field value. | Optional | 
+| new_ud2 | Change value for user-defined field 2. You can specify a maximum of 128 characters (ASCII) for each field value. | Optional | 
+| new_ud3 | Change value for user-defined field 3. You can specify a maximum of 128 characters (ASCII) for each field value. | Optional | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.Endpoint.Update.DATETIME | Date | Date the command was executed. | 
+| Qualys.Endpoint.Update.TEXT | String | Qualys response for the host update. | 
+
+#### Command example
+```!qualys-host-update ids=35700896 new_comment=comment```
+#### Context Example
+```json
+{
+    "Qualys": {
+        "Endpoint": {
+            "Update": {
+                "DATETIME": "2022-05-12T14:25:43Z",
+                "TEXT": "Assets successfully updated"
+            }
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>Assets successfully updated
+
+### qualys-update-unix-record
+***
+Update Unix records for authenticated scans of hosts running on Unix
+
+
+#### Base Command
+
+`qualys-update-unix-record`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| ids | Record IDs to update. | Required | 
+| add_ips | IPs specified will overwrite existing IPs in the record, and existing IPs will be removed. | Required | 
+
+
+#### Context Output
+
+There is no context output for this command.
+
+### qualys-asset-tag-list
+***
+List asset tags based on a search criteria.
+
+
+#### Base Command
+
+`qualys-asset-tag-list`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| criteria | Criteria field to search by predefined types. Possible values are: parent, provider, ruleType, name, id, criticalityScore. | Required | 
+| operator | Operator assigned to the search criteria. | Required | 
+| search_data | search content. | Required | 
+| limit | Automatic Pagination. | Optional | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.AssetTags.id | Number | Parent asset tag ID. | 
+| Qualys.AssetTags.name | String | Parent asset tag name. | 
+| Qualys.AssetTags.criticality_score | Number | Criticality score assigned to the asset tag. | 
+| Qualys.AssetTags.chlid_id | Number | Child asset tags ID. | 
+| Qualys.AssetTags.chlid_id.child_name | String | Child asset tags name. | 
+| Qualys.AssetTags.tag_name.rule_type | String | Created tag rule type. | 
+| Qualys.AssetTags.tag_name.rule_text | String | Created tag rule text. | 
+
+#### Command example
+```!qualys-asset-tag-list criteria=name operator=EQUALS search_data="example_tag"```
+#### Context Example
+```json
+{
+    "Qualys": {
+        "AssetTags": {
+            "childTags": [
+                {
+                    "id": "1",
+                    "name": "child1"
+                },
+                {
+                    "id": "2",
+                    "name": "child2"
+                }
+            ],
+            "created": "2022-11-29T12:54:52Z",
+            "criticalityScore": "3",
+            "id": "0",
+            "modified": "2022-11-29T12:54:52Z",
+            "name": "example_tag",
+            "ruleText": "example"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Tags identified by the specified filter
+>|Id|Name|Criticality Score|Rule Text|Child Tags|
+>|---|---|---|---|---|
+>| 0 | example_tag | 3 | example | **-**	***id***: 1<br/>	***name***: child1<br/>**-**	***id***: 2<br/>	***name***: child2 |
+
+
+### qualys-asset-tag-create
+***
+Create a new asset tag.
+
+
+#### Base Command
+
+`qualys-asset-tag-create`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| name | Name of the created tag. | Required | 
+| child_name | Names of the created child tags. | Optional | 
+| rule_type | Type of rule to dynamically tagging host.<br>The Rule Type argument determines the type of the Rule Text argument that is acceptable.<br>Possible values are: INSTALLED_SOFTWARE, NETWORK_RANGE, NAME_CONTAINS, OPEN_PORTS, VULN_EXIST, STATIC. | Required | 
+| rule_text | Criteria for the rule. <br/>Optional for STATIC rule type, required for the rest of the rule types. <br/>Acceptable formats for each Rule Type argument: <br/>NETWORK_RANGE - formats: IP Range OR IP Subnet Mask (Exmaple: 10.10.10.1-10.10.10.6 OR 10.10.10.0/24)<br/>VULN_EXIST(QID) - format: Number (Exmple: 12345)<br/>OPEN_PORTS - format: List of numbers (Exmaple: 443,888,12034)<br/>NAME_CONTAINS - format: REGEX (Exmaple: "/^example/")<br/>INSTALLED_SOFTWARE - format: REGEX (Exmaple: "/^example/")<br/>STATIC - *RULE TEXT OPTIONAL* | Optional | 
+| criticality_score | Criticality score of the asset tag. Values between 1 (lowest) and 5 (highest). | Optional | 
+
+
+#### Context Output
+
+| **Path** | **Type** | **Description** |
+| --- | --- | --- |
+| Qualys.AssetTags.id | String | Parent asset tag ID. | 
+| Qualys.AssetTags.name | String | Parent asset tag name. | 
+| Qualys.AssetTags.criticality_score | Number | Criticality score assigned to the asset tag. | 
+| Qualys.AssetTags.chlid_id | Number | Child asset tags ID. | 
+| Qualys.AssetTags.chlid_id.child_name | String | Child asset tags name. | 
+| Qualys.AssetTags.tag_name.rule_type | String | Created tag rule type. | 
+| Qualys.AssetTags.tag_name.rule_text | String | Created tag rule text. | 
+
+#### Command example
+```!qualys-asset-tag-create name=example_tag rule_type=STATIC rule_text="example" child_name=child1,child2 criticality_score=3```
+#### Context Example
+```json
+{
+    "Qualys": {
+        "AssetTags": {
+            "childTags": [
+                {
+                    "id": "1",
+                    "name": "child2"
+                },
+                {
+                    "id": "2",
+                    "name": "child1"
+                }
+            ],
+            "created": "2022-11-29T12:54:52Z",
+            "criticalityScore": "3",
+            "id": "0",
+            "modified": "2022-11-29T12:54:52Z",
+            "name": "example_tag",
+            "ruleText": "example"
+        }
+    }
+}
+```
+
+#### Human Readable Output
+
+>### Asset Tags Created
+>|Id|Name|Criticality Score|Rule Text|Child Tags|
+>|---|---|---|---|---|
+>| 0 | example_tag | 3 | example | **-**	***id***: 1<br/>	***name***: child2<br/>**-**	***id***: 2<br/>	***name***: child1 |
+
+
+### qualys-asset-tag-update
+***
+Update an existing asset tag.
+
+
+#### Base Command
+
+`qualys-asset-tag-update`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| id | ID of the tag to update. | Required | 
+| name | Name of the created tag. | Required | 
+| rule_type | Type of rule to dynamically tagging host.<br>The Rule Type argument determines the type of the Rule Text argument that is acceptable.<br>Possible values are: INSTALLED_SOFTWARE, NETWORK_RANGE, NAME_CONTAINS, OPEN_PORTS, VULN_EXIST, STATIC. | Required | 
+| rule_text | Criteria for the rule. <br/>Optional for STATIC rule type, required for the rest of the rule types. <br/>Acceptable formats for each Rule Type argument: <br/>NETWORK_RANGE - formats: IP Range OR IP Subnet Mask (Exmaple: 10.10.10.1-10.10.10.6 OR 10.10.10.0/24)<br/>VULN_EXIST(QID) - format: Number (Exmple: 12345)<br/>NAME_CONTAINS - format: REGEX (Exmaple: "/^example/")<br/>INSTALLED_SOFTWARE - format: REGEX (Exmaple: "/^example/")<br/>STATIC - *RULE TEXT OPTIONAL* | Optional | 
+| child_to_remove | Comma-separated list of child tag ID's to remove. | Optional | 
+| criticality_score | Criticality score of the asset tag. Values between 1 (lowest) and 5 (highest). | Optional | 
+
+
+#### Context Output
+
+There is no context output for this command.
+#### Command example
+```!qualys-asset-tag-update name=example_tag_updated rule_type=STATIC rule_text="example" id=12345```
+#### Human Readable Output
+
+>Asset tag updated.
+
+### qualys-asset-tag-delete
+***
+Delete an existing asset tag.
+
+
+#### Base Command
+
+`qualys-asset-tag-delete`
+#### Input
+
+| **Argument Name** | **Description** | **Required** |
+| --- | --- | --- |
+| id | ID of the tag to delete. | Required | 
+
+
+#### Context Output
+
+There is no context output for this command.
+#### Command example
+```!qualys-asset-tag-delete id=12345```
+#### Human Readable Output
+
+>Asset tag deleted.

@@ -5,7 +5,8 @@ import pytest
 import demistomock as demisto
 from CommonServerPython import CommandResults
 from GitHub import main, list_branch_pull_requests, list_all_projects_command, \
-    add_issue_to_project_board_command, get_path_data, github_releases_list_command, get_branch_command
+    add_issue_to_project_board_command, get_path_data, github_releases_list_command, get_branch_command, \
+    list_issue_comments
 import GitHub
 
 REGULAR_BASE_URL = 'https://api.github.com'
@@ -71,6 +72,31 @@ LIST_TEAM_MEMBERS_CASES = [
     (200, {'page': 1, 'per_page': 100}),
     (40, {'page': 1, 'per_page': 40})
 ]
+
+RETURN_ERROR_TARGET = 'GitHub.return_error'
+
+
+@pytest.mark.parametrize('params, expected_result', [
+    ({'credentials': {'password': '1234'}}, "Insert api token or private key")
+])
+def test_missing_params(mocker, params, expected_result):
+    """
+    Given:
+      - Case 1: credentials with no sshkey.
+    When:
+      - all the required parameters are missing.
+    Then:
+      - Ensure the exception message as expected.
+      - Case 1: Should return "Insert api token or private key" error message.
+    """
+
+    mocker.patch.object(demisto, 'params', return_value=params)
+    return_error_mock = mocker.patch(RETURN_ERROR_TARGET)
+    main()
+    assert return_error_mock.call_count == 1
+    # call_args last call with a tuple of args list and kwargs
+    err_msg = return_error_mock.call_args[0][0]
+    assert expected_result in err_msg
 
 
 @pytest.mark.parametrize('limit, expected_result', SEARCH_CASES)
@@ -333,3 +359,71 @@ def test_url_parameter_value(mocker, mock_params, expected_url):
     main()
 
     assert GitHub.BASE_URL == expected_url
+
+
+def test_list_issue_comments_no_since(mocker):
+    """
+    Given:
+        A call to list_issue_comments
+    When:
+        No since date was provided
+    Then:
+        The url_suffix argument provided to the http request should not include a since parameter
+    """
+    patched_request = mocker.patch('GitHub.http_request')
+    GitHub.ISSUE_SUFFIX = 'test'
+    issue_number = 1234
+    since_date = None
+    list_issue_comments(issue_number, since_date)
+    request_args = patched_request.call_args
+    assert 'since' not in request_args.kwargs['url_suffix']
+
+
+def test_list_issue_comments_since(mocker):
+    """
+    Given:
+        A call to list_issue_comments
+    When:
+        since date was provided
+    Then:
+        The url_suffix argument provided to the http request should include a since parameter
+    """
+    patched_request = mocker.patch('GitHub.http_request')
+    GitHub.ISSUE_SUFFIX = 'test'
+    issue_number = 1234
+    since_date = '2022-10-01'
+    list_issue_comments(issue_number, since_date)
+    request_args = patched_request.call_args
+    assert 'since' in request_args.kwargs['params']
+
+
+@pytest.mark.parametrize('args, response_content, expected_result', [
+    ({'assignee': 'user1', 'pull_request_number': '1'}, b'{"message": "success"}',
+     "The following users were assigned successfully to PR #1: \n['user1']"),
+    ({'assignee': 'user1, user2', 'pull_request_number': '1'}, b'{"message": "success"}',
+     "The following users were assigned successfully to PR #1: \n['user1', 'user2']"),
+    ({'assignee': 'user3', 'pull_request_number': '1'}, b'{"message": "success"}',
+     "\nThe following users were not assigned to #1: \n['user3'] \nVerify that the users exist and that you have the "
+     "right permissions."),
+])
+def test_assignee(mocker, args, response_content, expected_result):
+    """
+    Given:
+      - Case 1: one valid user to be assigned to PR
+      - Case 2: two valid users to be assigned to a PR
+      - Case 3: invalid user to be assigned to a PR
+    When:
+      - Calling the 'github_add_assignee_command' funciton
+    Then:
+      - Ensure the correct behaviour
+      - Case 1: Should return Success for one provided user
+      - Case 2: Should return Success for two provided users
+      - Case 3: Should return that assignment failed for provided user
+    """
+    mocker.patch.object(demisto, 'args', return_value=args)
+    GitHub.USER_SUFFIX = '/repos/user/repo'
+    mocker.patch('GitHub.http_request', return_value={"assignees": [{"login": "user1"}, {"login": "user2"}]})
+    mocker_results = mocker.patch('GitHub.return_results')
+    GitHub.github_add_assignee_command()
+    mocker_results.assert_called_once()
+    assert mocker_results.call_args_list[0].args[0].readable_output == expected_result

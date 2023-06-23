@@ -4,6 +4,7 @@ from CommonServerUserPython import *
 
 ''' IMPORTS '''
 import requests
+import urllib3
 import dateparser
 from typing import Dict, Any
 import warnings
@@ -11,7 +12,7 @@ warnings.simplefilter("ignore", UserWarning)
 
 
 # disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 ''' GLOBALS '''
 
@@ -98,7 +99,7 @@ def find_age(create_date):
     Returns: Number of days
 
     """
-    time_diff = datetime.now() - dateparser.parse(create_date)
+    time_diff = datetime.now() - dateparser.parse(create_date)  # type: ignore
     return time_diff.days
 
 
@@ -279,7 +280,8 @@ def create_domain_context_outputs(domain_result):
     dbot_context = {'Indicator': domain,
                     'Type': 'domain',
                     'Vendor': 'DomainTools Iris',
-                    'Score': dbot_score}
+                    'Score': dbot_score,
+                    'Reliability': demisto.params().get('integrationReliability')}
     if dbot_score == 3:
         domain_context['Malicious'] = {
             'Vendor': 'DomainTools Iris',

@@ -6963,7 +6963,7 @@ Further documentation available at https://docs.ansible.com/ansible/2.9/modules/
 | version | The maven version coordinate. Default is latest. | Optional | 
 | classifier | The maven classifier coordinate. | Optional | 
 | extension | The maven type/extension coordinate. Default is jar. | Optional | 
-| repository_url | The URL of the Maven Repository to download from.<br/>Use s3://... if the repository is hosted on Amazon S3, added in version 2.2.<br/>Use file://... if the repository is local, added in version 2.6. Default is http://repo1.maven.org/maven2. | Optional | 
+| repository_url | The URL of the Maven Repository to download from.<br/>Use s3://... if the repository is hosted on Amazon S3, added in version 2.2.<br/>Use file://... if the repository is local, added in version 2.6. Default is https://repo1.maven.org/maven2. | Optional | 
 | username | The username to authenticate as to the Maven Repository. Use AWS secret key of the repository is hosted on S3. | Optional | 
 | password | The password to authenticate with to the Maven Repository. Use AWS secret access key of the repository is hosted on S3. | Optional | 
 | headers | Add custom HTTP headers to a request in hash/dict format. | Optional | 
@@ -8270,3 +8270,16 @@ Further documentation available at https://docs.ansible.com/ansible/2.9/modules/
 | Linux.GetUrl.url | string | the actual URL used for the request | 
 
 
+### Troubleshooting
+The Ansible-Runner container is not suitable for running as a non-root user.
+Therefore, the Ansible integrations will fail if you follow the instructions in the Cortex XSOAR [Docker Hardening Guide](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSOAR/6.10/Cortex-XSOAR-Administrator-Guide/Docker-Hardening-Guide). 
+
+The `docker.run.internal.asuser` server configuration causes the software that is run inside of the Docker containers utilized by Cortex XSOAR to run as a non-root user account inside the container.
+
+The Ansible-Runner software is required to run as root as it applies its own isolation via bwrap to the Ansible execution environment. 
+
+This is a limitation of the Ansible-Runner software itself https://github.com/ansible/ansible-runner/issues/611.
+
+A workaround is to use the `docker.run.internal.asuser.ignore` server setting and to configure Cortex XSOAR to ignore the Ansible container image by setting the value of `demisto/ansible-runner` and afterwards running /reset_containers to reload any containers that might be running to ensure they receive the configuration.
+
+See step 2 of this [guide](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSOAR/6.10/Cortex-XSOAR-Administrator-Guide/Run-Docker-with-Non-Root-Internal-Users) for complete instructions.

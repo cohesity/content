@@ -15,15 +15,19 @@ configuration:
   name: api_key
   defaultvalue: ""
   type: 4
-  required: true
+  required: false
+  hidden: true
+- name: credentials_api_key
+  type: 9
+  required: false
+  displaypassword: API Key
+  hiddenusername: true
 - display: Use system proxy settings
   name: proxy
-  defaultvalue: ""
   type: 8
   required: false
 - display: Trust any certificate (not secure)
   name: insecure
-  defaultvalue: ""
   type: 8
   required: false
 script:
@@ -63,7 +67,7 @@ script:
     description: Parses a User Agent string
   runonce: false
   subtype: python3
-  dockerimage: demisto/python3:3.9.8.24399
+  dockerimage: demisto/python3:3.10.12.63474
 tests:
 - WhatsMyBrowser-Test
 fromversion: 5.0.0

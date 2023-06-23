@@ -8,7 +8,8 @@ import json
 import requests
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+import urllib3
+urllib3.disable_warnings()
 
 ''' GLOBALS/PARAMS '''
 
@@ -117,10 +118,15 @@ def update_user_command():
 
     if userItems:
         userURI = str(userItems["objects"][0]["resource_uri"])
+        if active == "true":
+            userDict = {
+                "active": True
+            }
+        else:
+            userDict = {
+                "active": False
+            }
 
-        userDict = {
-            "active": active
-        }
         jsonData = json.dumps(userDict)
 
         res = requests.patch(SERVER + userURI, data=jsonData, auth=(USER_NAME, PASSWORD), verify=USE_SSL)

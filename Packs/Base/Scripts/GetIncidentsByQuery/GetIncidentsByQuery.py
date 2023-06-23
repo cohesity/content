@@ -5,7 +5,7 @@ import uuid
 from dateutil import parser
 
 PREFIXES_TO_REMOVE = ['incident.']
-PAGE_SIZE = int(demisto.args().get('pageSize', 500))
+PAGE_SIZE = int(demisto.args().get('pageSize', 100))
 PYTHON_MAGIC = "$$##"
 
 
@@ -79,7 +79,7 @@ def handle_incident(inc, fields_to_populate, include_context):
     custom_fields = inc.get('CustomFields', {}) or {}
     inc.update(custom_fields)
     if fields_to_populate and len(fields_to_populate) > 0:
-        inc = {k: v for k, v in inc.items() if k in fields_to_populate}
+        inc = {k: v for k, v in inc.items() if k.lower() in {val.lower() for val in fields_to_populate}}
     if include_context:
         inc['context'] = get_context(inc['id'])
     return inc
@@ -105,11 +105,11 @@ def get_incidents_by_page(args, page, fields_to_populate, include_context):
     if is_demisto_version_ge('6.2.0') and len(fields_to_populate) > 0:
         args['populateFields'] = get_fields_to_populate_arg(fields_to_populate)
     res = demisto.executeCommand("getIncidents", args)
-    if res[0]['Contents'].get('data') is None:
-        return []
     if is_error(res):
         error_message = get_error(res)
         raise Exception("Failed to get incidents by query args: %s error: %s" % (args, error_message))
+    if res[0]['Contents'].get('data') is None:
+        return []
     incidents = res[0]['Contents'].get('data') or []
 
     parsed_incidents = []
@@ -171,6 +171,7 @@ def get_incidents(query, time_field, size, from_date, to_date, fields_to_populat
 
 
 def get_comma_sep_list(value):
+    value = value.replace('|', ',')
     return map(lambda x: x.strip(), value.split(","))
 
 
@@ -192,6 +193,9 @@ def main():
         for arg_name in ['NonEmptyFields', 'populateFields']:
             split_argument_list = get_comma_sep_list(d_args.get(arg_name, ''))
             split_argument_list = [x for x in split_argument_list if len(x) > 0]
+            if 'openDuration' in split_argument_list:  # pragma: no cover
+                split_argument_list.append('openduration')  # pragma: no cover
+                split_argument_list.remove('openDuration')  # pragma: no cover
             d_args[arg_name] = preprocess_incidents_fields_list(split_argument_list)
         query = build_incidents_query(d_args.get('query'),
                                       d_args.get('incidentTypes'),

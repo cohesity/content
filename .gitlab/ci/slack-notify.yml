@@ -1,10 +1,11 @@
 
 default:
-  image: docker-io.artifactory.pan.local/devdemisto/gitlab-content-ci:1.0.0.24117
+  image: docker-io.art.code.pan.run/devdemisto/gitlab-content-ci:1.0.0.49555
   artifacts:
     expire_in: 30 days
     paths:
       - /builds/xsoar/content/artifacts/*
+      - /builds/xsoar/content/pipeline_jobs_folder/*
     when: always
 
 stages:
@@ -21,7 +22,7 @@ slack-notify:
   stage: notify
   extends: .default-job-settings
   script:
-    - python3 ./Tests/scripts/gitlab_slack_notifier.py -p "$PIPELINE_TO_QUERY" -s "$SLACK_TOKEN" -c "$GITLAB_STATUS_TOKEN" -ca "$ARTIFACTS_FOLDER" -ch "$SLACK_CHANNEL" -tw "$WORKFLOW"
+    - python3 ./Tests/scripts/gitlab_slack_notifier.py -p "$PIPELINE_TO_QUERY" -s "$SLACK_TOKEN" -c "$GITLAB_STATUS_TOKEN" -ch "$SLACK_CHANNEL" -tw "$WORKFLOW"
   retry:
     max: 2
   needs:

@@ -269,11 +269,11 @@ Further documentation available at https://docs.ansible.com/ansible/2.9/modules/
 | ACME.AcmeCertificate.cert_days | number | The number of days the certificate remains valid. | 
 | ACME.AcmeCertificate.challenge_data | unknown | Per identifier / challenge type challenge data. Since Ansible 2.8.5, only challenges which are not yet valid are returned. | 
 | ACME.AcmeCertificate.challenge_data_dns | unknown | List of TXT values per DNS record, in case challenge is \`dns-01\`. Since Ansible 2.8.5, only challenges which are not yet valid are returned. | 
-| ACME.AcmeCertificate.authorizations | unknown | ACME authorization data. Maps an identifier to ACME authorization objects. See \`https://tools.ietf.org/html/rfc8555\#section-7.1.4\`. | 
+| ACME.AcmeCertificate.authorizations | unknown | ACME authorization data. Maps an identifier to ACME authorization objects. See \`https://tools.ietf.org/html/rfc8555#section-7.1.4\`. | 
 | ACME.AcmeCertificate.order_uri | string | ACME order URI. | 
 | ACME.AcmeCertificate.finalization_uri | string | ACME finalization URI. | 
 | ACME.AcmeCertificate.account_uri | string | ACME account URI. | 
-| ACME.AcmeCertificate.all_chains | unknown | When \`retrieve_all_alternates\` is set to \`yes\`, the module will query the ACME server for alternate chains. This return value will contain a list of all chains returned, the first entry being the main chain returned by the server. See \`Section 7.4.2 of RFC8555,https://tools.ietf.org/html/rfc8555\#section-7.4.2\` for details. | 
+| ACME.AcmeCertificate.all_chains | unknown | When \`retrieve_all_alternates\` is set to \`yes\`, the module will query the ACME server for alternate chains. This return value will contain a list of all chains returned, the first entry being the main chain returned by the server. See \`Section 7.4.2 of RFC8555,https://tools.ietf.org/html/rfc8555#section-7.4.2\` for details. | 
 
 
 #### Command Example
@@ -548,3 +548,17 @@ Further documentation available at https://docs.ansible.com/ansible/2.9/modules/
 >      * #### Caaidentities
 >        * 0: letsencrypt.org
 
+
+### Troubleshooting
+The Ansible-Runner container is not suitable for running as a non-root user.
+Therefore, the Ansible integrations will fail if you follow the instructions in the Cortex XSOAR [Docker Hardening Guide](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSOAR/6.10/Cortex-XSOAR-Administrator-Guide/Docker-Hardening-Guide). 
+
+The `docker.run.internal.asuser` server configuration causes the software that is run inside of the Docker containers utilized by Cortex XSOAR to run as a non-root user account inside the container.
+
+The Ansible-Runner software is required to run as root as it applies its own isolation via bwrap to the Ansible execution environment. 
+
+This is a limitation of the Ansible-Runner software itself https://github.com/ansible/ansible-runner/issues/611.
+
+A workaround is to use the `docker.run.internal.asuser.ignore` server setting and to configure Cortex XSOAR to ignore the Ansible container image by setting the value of `demisto/ansible-runner` and afterwards running /reset_containers to reload any containers that might be running to ensure they receive the configuration.
+
+See step 2 of this [guide](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSOAR/6.10/Cortex-XSOAR-Administrator-Guide/Run-Docker-with-Non-Root-Internal-Users) for complete instructions.

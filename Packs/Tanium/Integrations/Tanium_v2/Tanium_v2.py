@@ -1,12 +1,12 @@
+import json
 from typing import Dict
 
-import demistomock as demisto
-from CommonServerPython import *
-from CommonServerUserPython import *
+import demistomock as demisto  # noqa: F401
+import urllib3
+from CommonServerPython import *  # noqa: F401
+
 
 ''' IMPORTS '''
-import json
-import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 ''' GLOBALS/PARAMS '''
@@ -118,11 +118,11 @@ class Client(BaseClient):
         Returns:
             parameter_conditions (List): list of dictionaries
         """
-        parameters = parameters.split(';')
+        parameters_list = parameters.split(';')
         parameter_conditions: List[Dict[str, str]] = list()
         add_to_the_previous_pram = ''
         # Goes over the parameters from the end and any param that does not contain a key and value is added to the previous param
-        for param in reversed(parameters):
+        for param in reversed(parameters_list):
             param += add_to_the_previous_pram
             add_to_the_previous_pram = ''
             if '=' not in param or param.startswith('='):
@@ -218,8 +218,10 @@ class Client(BaseClient):
         for row in results_sets.get('rows'):
             tmp_row = {}
             for item, column in zip(row.get('data', []), columns):
-                item_value = list(map(lambda x: x.get('text', ''), item))
-                item_value = ', '.join(item_value)
+                item_value_lst = list(map(lambda x: x.get('text', ''), item))
+                if "[current result unavailable]" in item_value_lst:
+                    break
+                item_value = ', '.join(item_value_lst)
 
                 if item_value != '[no results]':
                     tmp_row[column] = item_value
@@ -236,7 +238,7 @@ class Client(BaseClient):
 
     def build_create_action_body(self, by_host, action_name,
                                  parameters, package_id='', package_name='', action_group_id='', action_group_name='',
-                                 target_group_id='', target_group_name='', hostname='', ip_address=''):
+                                 target_group_id='', target_group_name='', hostname='', ip_address='', expire=None):
         """
         This method used to build create_action request body by host or by target group
         """
@@ -259,7 +261,7 @@ class Client(BaseClient):
             get_package_res = self.do_request('GET', 'packages/by-name/' + package_name)
             package_id = get_package_res.get('data').get('id')
 
-        expire_seconds = get_package_res.get('data').get('expire_seconds', 0)
+        expire_seconds = expire if expire else get_package_res.get('data').get('expire_seconds', 0)
 
         target_group = {}  # type: ignore
 
@@ -847,11 +849,12 @@ def create_action_by_host(client, data_args):
     parameters = data_args.get('parameters')
     ip_address = data_args.get('ip-address')
     hostname = data_args.get('hostname')
+    expire = arg_to_number(data_args.get('expiration-time'))
 
     body = client.build_create_action_body(True, action_name, parameters, package_id=package_id,
                                            package_name=package_name, action_group_id=action_group_id,
                                            action_group_name=action_group_name,
-                                           hostname=hostname, ip_address=ip_address)
+                                           hostname=hostname, ip_address=ip_address, expire=expire)
 
     raw_response = client.do_request('POST', 'actions', body)
     action = client.get_action_item(raw_response.get('data'))
@@ -1054,6 +1057,40 @@ def delete_group(client, data_args):
     return human_readable, outputs, raw_response
 
 
+def get_action_result(client, data_args):
+    actions_ids = argToList(data_args.get('id'))
+    action_res_outputs: List = []
+    action_res_hr: List = []
+
+    for action_id in actions_ids:
+        endpoint_url = '/result_data/action/' + str(action_id)
+        raw_response = client.do_request('GET', endpoint_url)
+        try:
+            all_devices_results = raw_response['data']['result_sets'][0]['rows']
+            device_results = []
+            for device_res in all_devices_results:
+                formatted_device = {
+                    'HostName': device_res['data'][0][0]['text'],
+                    'Status': str(device_res['data'][1][0]['text']).split(':')[1],
+                    'ComputerID': device_res['cid']
+                }
+                device_results.append(formatted_device)
+            raw_response = raw_response.get('data')
+            raw_response['ID'] = action_id
+            action_res_outputs.append(raw_response)
+            if device_results:
+                action_res_hr.extend(device_results)
+        except Exception:
+            continue
+
+    human_readable = tableToMarkdown('Device Statuses', t=action_res_hr, removeNull=True,
+                                     headers=['HostName', "Status", "ComputerID"])
+
+    context = createContext(action_res_outputs, removeNull=True)
+    outputs = {'Tanium.ActionResult(val.ID && val.ID === obj.ID)': context}
+    return human_readable, outputs, action_res_outputs
+
+
 ''' COMMANDS MANAGER / SWITCH PANEL '''
 
 
@@ -1103,7 +1140,8 @@ def main():
         'tn-create-manual-group': create_manual_group,
         'tn-get-group': get_group,
         'tn-list-groups': get_groups,
-        'tn-delete-group': delete_group
+        'tn-delete-group': delete_group,
+        'tn-get-action-result': get_action_result
     }
 
     try:

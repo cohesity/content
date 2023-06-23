@@ -1,2 +1,6 @@
-[file:integration-Netskope.yml]
-ignore=IN126,IN145
+[file:NetskopeEventCollector.yml]
+ignore=MR108
+
+[file:NetskopeEventCollector_1_3.yml]
+ignore=MR108
+

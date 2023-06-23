@@ -383,7 +383,9 @@ def main():
     user_profile = None
     params = demisto.params()
     base_url = urljoin(params['url'].strip('/'), '/api/now/')
-    token = params.get('api_key')
+    token = params.get('credentials_api_key', {}).get('password') or params.get('api_key')
+    if not token:
+        return_error('API key must be provided.')
     mapper_in = params.get('mapper_in')
     mapper_out = params.get('mapper_out')
     verify_certificate = not params.get('insecure', False)
@@ -445,7 +447,7 @@ def main():
 
     except Exception:
         # For any other integration command exception, return an error
-        return_error(f'Failed to execute {command} command. Traceback: {traceback.format_exc()}')
+        return_error(f'Failed to execute {command} command.')
 
 
 if __name__ in ('__main__', '__builtin__', 'builtins'):

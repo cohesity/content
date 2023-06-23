@@ -1,3 +1,4 @@
+import urllib3
 import demistomock as demisto
 from CommonServerPython import *
 from CommonServerUserPython import *
@@ -6,7 +7,7 @@ from CommonServerUserPython import *
 import requests
 
 # disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 # remove proxy if not set to true in params
 if not demisto.params().get('proxy', False):
@@ -41,12 +42,15 @@ RELEVANT_TOKEN_ENTRIES = {
     'url': 'TokenURL'
 }
 DEF_PARAMS = {
-    'auth_token': demisto.params().get('auth_token')
+    'auth_token': demisto.params().get('authentication_token', {}).get('password')
+    or demisto.params().get('auth_token', None)
 }
+if not DEF_PARAMS['auth_token']:
+    raise DemistoException('API Authentication Token must be provided.')
 '''HELPER FUNCTIONS'''
 
 
-def http_request(method, url, params=None):
+def http_request(method, url, params=None):  # pragma: no cover
     """
     HTTP request helper function
     """
@@ -116,7 +120,7 @@ def create_incident(alert):
 '''COMMANDS'''
 
 
-def test_module():
+def test_module():  # pragma: no cover
     try:
         res = requests.request('GET', SERVER + 'ping', params=DEF_PARAMS, verify=VERIFY_CERTIFICATE)
         if not res.ok:
@@ -141,7 +145,7 @@ def list_canaries():
     res = http_request('GET', SERVER + 'devices/all')
     new_devices = [
         {new_key: device[old_key] if old_key in device else None for old_key, new_key in
-         RELEVANT_DEVICE_ENTRIES.items()} for
+         list(RELEVANT_DEVICE_ENTRIES.items())} for
         device in res['devices']]
     return res, new_devices
 
@@ -178,7 +182,7 @@ def list_tokens():
     new_tokens = []
     for token in res['tokens']:
         new_tokens.append({new_key: token[old_key] if old_key in token else None for old_key, new_key in
-                           RELEVANT_TOKEN_ENTRIES.items()})
+                           list(RELEVANT_TOKEN_ENTRIES.items())})
     return res, new_tokens
 
 

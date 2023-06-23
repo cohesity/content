@@ -9,12 +9,11 @@ comment: '[Enter a description of the script, including what function it perform
 commonfields:
   id: BaseScript
   version: -1
-enabled: false
 name: BaseScript
 outputs:
-  - contextPath: BaseScript.Output
-    description: '[Enter a description of the data returned in this output.]'
-    type: String
+- contextPath: BaseScript.Output
+  description: '[Enter a description of the data returned in this output.]'
+  type: String
 script: '-'
 system: false
 tags:
@@ -22,5 +21,5 @@ tags:
 timeout: '0'
 type: python
 subtype: python3
-dockerimage: demisto/python3:3.9.7.24076
+dockerimage: demisto/python3:3.10.5.31797
 fromversion: 5.0.0

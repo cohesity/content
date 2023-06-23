@@ -9,9 +9,10 @@ import requests
 import traceback
 from datetime import datetime, timedelta
 import os
+import urllib3
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 ''' GLOBALS/PARAMS '''
 FETCHES_INCIDENTS = ''
@@ -39,7 +40,7 @@ HEADERS = {
     'Accept': "application/json"
 }
 
-QUERY_OPERATORS = ['eq', 'gt', 'lt', 'contains', 'startwith']
+QUERY_OPERATORS = ['eq', 'gt', 'lt', 'contains', 'startswith']
 
 ONE_STEP_ACTION_HEADERS = ['name', 'displayName', 'description', 'id', 'association', 'standInKey']
 
@@ -349,11 +350,12 @@ def get_attachments_info(id_type, object_id, attachment_type, business_object_ty
 
 
 def attachment_results(attachments):
+    attachments_file_results = []
     for attachment in attachments:
         attachment_content = attachment.get('Content')
         attachment_name = attachment.get('FileName')
-        return fileResult(attachment_name, attachment_content)
-    return
+        attachments_file_results.append(fileResult(attachment_name, attachment_content))
+    return attachments_file_results
 
 
 def run_query_on_business_objects(bus_id, filter_query, max_results, is_fetch):

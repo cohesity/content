@@ -1,10 +1,11 @@
 commonfields:
   id: Zendesk
   version: -1
+deprecated: true
 name: Zendesk
-display: Zendesk
+display: Zendesk - (Deprecated)
 category: Case Management
-description: IT service management
+description: Deprecated. Use the Zendesk v2 integration instead.
 configuration:
 - display: Zendesk address (e.g. https://demisto.zendesk.com)
   name: url
@@ -23,12 +24,10 @@ configuration:
   required: true
 - display: Use system proxy settings
   name: proxy
-  defaultvalue: ''
   type: 8
   required: false
 - display: Trust any certificate (not secure)
   name: insecure
-  defaultvalue: ""
   type: 8
   required: false
 - display: Fetch incidents

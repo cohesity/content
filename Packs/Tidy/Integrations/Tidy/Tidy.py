@@ -8,8 +8,6 @@ This integration based on:
 """
 
 
-import traceback
-from socket import error
 from typing import Any, Callable, Dict, List
 
 from ansible_runner import Runner, run
@@ -56,7 +54,7 @@ class TidyClient:
             ssh.close()
         except AuthenticationException as e:
             raise DemistoException(f"Authentication details isn't valid.\nFull error: {e}")
-        except error as e:
+        except OSError as e:
             raise DemistoException(f"SSH socket isn't enabled in endpoint.\nFull error: {e}")
         except SSHException as e:
             raise DemistoException(f"Hostname \"{self.hostname}\" isn't valid!.\nFull error: {e}")
@@ -658,8 +656,9 @@ def main() -> None:
 
     # Tidy client configuration
     hostname = demisto.getArg("hostname") or demisto.getParam("hostname")
-    user = demisto.getArg("user") or demisto.getParam("user")
-    password = demisto.getArg("password") or demisto.getParam("password")
+    user = demisto.getArg("user") or demisto.params().get('user_creds', {}).get('identifier') or demisto.params().get("user")
+    password = demisto.getArg("password") or demisto.params().get(
+        'user_creds', {}).get('password') or demisto.params().get("password")
     ssh_key = demisto.getParam("ssh_key")
     client = TidyClient(
         hostname=hostname,
@@ -674,7 +673,6 @@ def main() -> None:
         demisto.results(commands[command](client, **demisto.args()))
     # Log exceptions and return errors
     except DemistoException as e:
-        demisto.error(traceback.format_exc())
         return_error(f'Failed to execute {demisto.command()} command.\nError:\n{str(e)}')
 
 

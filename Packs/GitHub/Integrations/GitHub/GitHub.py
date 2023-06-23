@@ -8,9 +8,10 @@ from datetime import datetime
 from typing import Any, Union
 import codecs
 import requests
+import urllib3
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 ''' GLOBALS/PARAMS '''
 BASE_URL: str
@@ -884,16 +885,20 @@ def list_pr_review_comments_command():
     return_outputs(readable_output=human_readable, outputs=ec, raw_response=response)
 
 
-def list_issue_comments(issue_number: Union[int, str]) -> list:
+def list_issue_comments(issue_number: Union[int, str], since_date: Optional[str]) -> list:
     suffix = ISSUE_SUFFIX + f'/{issue_number}/comments'
-    response = http_request('GET', url_suffix=suffix)
+    params = {}
+    if since_date:
+        params = {'since': since_date}
+    response = http_request('GET', url_suffix=suffix, params=params)
     return response
 
 
 def list_issue_comments_command():
     args = demisto.args()
     issue_number = args.get('issue_number')
-    response = list_issue_comments(issue_number)
+    since_date = args.get('since')
+    response = list_issue_comments(issue_number, since_date)
 
     ec_object = [format_comment_outputs(comment, issue_number) for comment in response]
     ec = {
@@ -1933,6 +1938,35 @@ def github_releases_list_command():
     return_results(result)
 
 
+def update_comment(comment_id: Union[int, str], msg: str) -> dict:
+    suffix = f'{ISSUE_SUFFIX}/comments/{comment_id}'
+    response = http_request('PATCH', url_suffix=suffix, data={'body': msg})
+    return response
+
+
+def github_update_comment_command():
+    args = demisto.args()
+    comment_id = args.get('comment_id')
+    issue_number = args.get('issue_number')
+    body = args.get('body')
+    response = update_comment(comment_id, body)
+
+    ec_object = format_comment_outputs(response, issue_number)
+    ec = {
+        'GitHub.Comment(val.IssueNumber === obj.IssueNumber && val.ID === obj.ID)': ec_object,
+    }
+    human_readable = tableToMarkdown('Updated Comment', ec_object, removeNull=True)
+    return_outputs(readable_output=human_readable, outputs=ec, raw_response=response)
+
+
+def github_delete_comment_command():
+    args = demisto.args()
+    comment_id = args.get('comment_id')
+    suffix = f'{ISSUE_SUFFIX}/comments/{comment_id}'
+    http_request('DELETE', url_suffix=suffix)
+    return_results(f'comment with ID {comment_id} was deleted successfully')
+
+
 def fetch_incidents_command():
     last_run = demisto.getLastRun()
     if last_run and 'start_time' in last_run:
@@ -1945,6 +1979,43 @@ def fetch_incidents_command():
 
     demisto.setLastRun({'start_time': datetime.strftime(last_time, '%Y-%m-%dT%H:%M:%SZ')})
     demisto.incidents(incidents)
+
+
+def github_add_assignee_command():
+    """
+    Assigns Github user to a PR
+
+        Args:
+            assignee (str): Github username.
+            pull_request_number (str): the pull request/issue number.
+
+        Returns:
+            CommandResults object with informative printout if adding user was successfull or not
+    """
+    assigned_users = []
+    not_assigned_users = []
+    args = demisto.args()
+    assignee = args.get('assignee')
+    pr_number = args.get('pull_request_number')
+    assignee_list = argToList(assignee)
+    suffix = f'{USER_SUFFIX}/issues/{pr_number}/assignees'
+    post_data = {"assignees": assignee_list}
+    response = http_request('POST', url_suffix=suffix, data=post_data)
+    assignees_response = response.get("assignees")
+    assigned_users_from_pr = [user.get("login") for user in assignees_response]
+    for user in assignee_list:
+        if user in assigned_users_from_pr:
+            assigned_users.append(user)
+        else:
+            not_assigned_users.append(user)
+    message = ''
+    if assigned_users:
+        message = f'The following users were assigned successfully to PR #{pr_number}: \n{assigned_users}'
+    if not_assigned_users:
+        message += f'\nThe following users were not assigned to #{pr_number}: \n{not_assigned_users} \n' \
+                   f'Verify that the users exist and that you have the right permissions.'
+    return_results(CommandResults(outputs_prefix='GitHub.Assignees', outputs_key_field='login', outputs=assignees_response,
+                                  raw_response=response, readable_output=message))
 
 
 ''' COMMANDS MANAGER / SWITCH PANEL '''
@@ -1990,6 +2061,9 @@ COMMANDS = {
     'GitHub-add-issue-to-project-board': add_issue_to_project_board_command,
     'GitHub-get-path-data': get_path_data,
     'GitHub-releases-list': github_releases_list_command,
+    'GitHub-update-comment': github_update_comment_command,
+    'GitHub-delete-comment': github_delete_comment_command,
+    'GitHub-add-assignee': github_add_assignee_command,
 }
 
 
@@ -2015,8 +2089,8 @@ def main():
     params = demisto.params()
     BASE_URL = params.get('url', 'https://api.github.com')
     USER = params.get('user')
-    TOKEN = params.get('token', '')
-    creds: dict = params.get('credentials', {})
+    TOKEN = params.get('token') or (params.get('api_token') or {}).get('password', '')
+    creds: dict = params.get('credentials', {}).get('credentials', {})
     PRIVATE_KEY = creds.get('sshkey', '') if creds else ''
     INTEGRATION_ID = params.get('integration_id')
     INSTALLATION_ID = params.get('installation_id')

@@ -1,19 +1,21 @@
 import pytest
+
 from FeedUnit42v2 import Client, fetch_indicators, get_indicators_command, handle_multiple_dates_in_one_field, \
     get_indicator_publication, get_attack_id_and_value_from_name, parse_indicators, parse_campaigns, \
     parse_reports_and_report_relationships, create_attack_pattern_indicator, create_course_of_action_indicators, \
-    get_ioc_type, get_ioc_value, create_list_relationships, get_ioc_value_from_ioc_name, \
-    change_attack_pattern_to_stix_attack_pattern
+    get_ioc_type, get_ioc_value, create_list_relationships, extract_ioc_value, \
+    change_attack_pattern_to_stix_attack_pattern, DemistoException
 
 from test_data.feed_data import INDICATORS_DATA, ATTACK_PATTERN_DATA, MALWARE_DATA, RELATIONSHIP_DATA, REPORTS_DATA, \
     REPORTS_INDICATORS, ID_TO_OBJECT, INDICATORS_RESULT, CAMPAIGN_RESPONSE, CAMPAIGN_INDICATOR, COURSE_OF_ACTION_DATA, \
     PUBLICATIONS, ATTACK_PATTERN_INDICATOR, COURSE_OF_ACTION_INDICATORS, RELATIONSHIP_OBJECTS, INTRUSION_SET_DATA, \
-    DUMMY_INDICATOR_WITH_RELATIONSHIP_LIST, STIX_ATTACK_PATTERN_INDICATOR, SUB_TECHNIQUE_INDICATOR, SUB_TECHNIQUE_DATA
+    DUMMY_INDICATOR_WITH_RELATIONSHIP_LIST, STIX_ATTACK_PATTERN_INDICATOR, SUB_TECHNIQUE_INDICATOR, \
+    SUB_TECHNIQUE_DATA, INVALID_ATTACK_PATTERN_STRUCTURE
 
 
 @pytest.mark.parametrize('command, args, response, length', [
-    (get_indicators_command, {'limit': 2}, INDICATORS_DATA, 2),
-    (get_indicators_command, {'limit': 5}, INDICATORS_DATA, 5),
+    (get_indicators_command, {'limit': 2, 'indicators_type': 'indicator'}, INDICATORS_DATA, 2),
+    (get_indicators_command, {'limit': 5, 'indicators_type': 'indicator'}, INDICATORS_DATA, 5)
 ])  # noqa: E124
 def test_commands(command, args, response, length, mocker):
     """
@@ -46,6 +48,17 @@ TYPE_TO_RESPONSE = {
     'intrusion-set': INTRUSION_SET_DATA
 }
 
+TYPE_TO_RESPONSE_WIITH_INVALID_ATTACK_PATTERN_DATA = {
+    'indicator': INDICATORS_DATA,
+    'report': REPORTS_DATA,
+    'attack-pattern': INVALID_ATTACK_PATTERN_STRUCTURE,
+    'malware': MALWARE_DATA,
+    'campaign': CAMPAIGN_RESPONSE,
+    'relationship': RELATIONSHIP_DATA,
+    'course-of-action': COURSE_OF_ACTION_DATA,
+    'intrusion-set': INTRUSION_SET_DATA
+}
+
 
 def test_fetch_indicators_command(mocker):
     """
@@ -71,6 +84,43 @@ def test_fetch_indicators_command(mocker):
     indicators = fetch_indicators(client, create_relationships=True)
     assert len(indicators) == 17
     assert DUMMY_INDICATOR_WITH_RELATIONSHIP_LIST in indicators
+
+
+def test_fetch_indicators_fails_on_invalid_attack_pattern_structure(mocker):
+    """
+    Given
+        - Invalid attack pattern indicator structure
+
+    When
+        - fetching indicators
+
+    Then
+        - DemistoException is raised.
+    """
+    def mock_get_stix_objects(test, **kwargs):
+        type_ = kwargs.get('type')
+        client.objects_data[type_] = TYPE_TO_RESPONSE_WIITH_INVALID_ATTACK_PATTERN_DATA[type_]
+
+    client = Client(api_key='1234', verify=False)
+    mocker.patch.object(client, 'fetch_stix_objects_from_api', side_effect=mock_get_stix_objects)
+
+    with pytest.raises(DemistoException, match=r"Failed parsing attack indicator"):
+        fetch_indicators(client, create_relationships=True)
+
+
+def test_get_attack_id_and_value_from_name_on_invalid_indicator():
+    """
+    Given
+        - Invalid attack indicator structure
+
+    When
+        - parsing the indicator name.
+
+    Then
+        - DemistoException is raised.
+    """
+    with pytest.raises(DemistoException, match=r"Failed parsing attack indicator"):
+        get_attack_id_and_value_from_name({"name": "test"})
 
 
 def test_feed_tags_param(mocker):
@@ -158,7 +208,8 @@ def test_parse_indicators():
     - we extract this IOCs list to Demisto format
     Then
     - run the parse_indicators
-    Validate The IOCs list extracted successfully.
+    - Validate The IOCs list extracted successfully.
+
     """
     assert parse_indicators(INDICATORS_DATA, [], '')[0] == INDICATORS_RESULT
 
@@ -271,8 +322,8 @@ def test_get_ioc_value_from_ioc_name():
     - run the get_ioc_value
     Validate The IOC value extracted successfully.
     """
-    assert get_ioc_value_from_ioc_name({'name': "([file:name = 'blabla' OR file:name = 'blabla'] AND "
-                                       "[file:hashes.'SHA-256' = '4f75622c2dd839f'])"}) == "4f75622c2dd839f"
+    name = "([file:name = 'blabla' OR file:name = 'blabla'] AND [file:hashes.'SHA-256' = '4f75622c2dd839f'])"
+    assert extract_ioc_value(name) == "4f75622c2dd839f"
 
 
 def test_change_attack_pattern_to_stix_attack_pattern():

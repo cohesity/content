@@ -16,7 +16,11 @@ class MsGraphClient:
                  tenant_id: str,
                  verify: bool,
                  proxy: bool,
-                 azure_ad_endpoint: str = 'https://login.microsoftonline.com'):
+                 certificate_thumbprint: Optional[str] = None,
+                 private_key: Optional[str] = None,
+                 azure_ad_endpoint: str = 'https://login.microsoftonline.com',
+                 managed_identities_client_id: Optional[str] = None,
+                 ):
         client_args = {
             'base_url': 'https://graph.microsoft.com',
             'auth_id': app_id,
@@ -28,7 +32,11 @@ class MsGraphClient:
             'self_deployed': True,
             'grant_type': CLIENT_CREDENTIALS,
             'ok_codes': (200, 201, 204),
-            'azure_ad_endpoint': azure_ad_endpoint
+            'azure_ad_endpoint': azure_ad_endpoint,
+            'private_key': private_key,
+            'certificate_thumbprint': certificate_thumbprint,
+            'managed_identities_client_id': managed_identities_client_id,
+            'managed_identities_resource_uri': Resources.graph,
         }
         if not (app_secret and tenant_id):
             client_args['grant_type'] = DEVICE_CODE
@@ -67,8 +75,11 @@ def complete_auth(client: MsGraphClient):  # pragma: no cover
     return 'Authorization completed successfully.'
 
 
-def test_module(client: MsGraphClient, params: Dict) -> str:  # pragma: no cover
-    if params.get('app_secret') and params.get('tenant_id'):
+def test_module(client: MsGraphClient,
+                app_secret: str,
+                tenant_id: str,
+                managed_identities_client_id: Optional[str]) -> str:  # pragma: no cover
+    if (app_secret and tenant_id) or managed_identities_client_id:
         client.ms_client.get_access_token()
         return 'ok'
     else:
@@ -107,7 +118,10 @@ def generic_command(client: MsGraphClient, args: Dict[str, Any]) -> CommandResul
         results = {'raw_response': response}
 
         if argToBoolean(args.get('populate_context', 'true')):
-            results['outputs'] = get_response_outputs(response)
+            outputs = get_response_outputs(response)
+            if outputs is True:
+                return CommandResults(readable_output='The API query ran successfully and returned no content.')
+            results['outputs'] = outputs
             results['outputs_prefix'] = 'MicrosoftGraph'
 
     return CommandResults(**results)  # type: ignore[arg-type]
@@ -131,8 +145,10 @@ def main() -> None:  # pragma: no cover
         scope += params.get('scope')
 
     app_secret = params.get('app_secret') or (params.get('credentials') or {}).get('password')
-    if not app_secret:
-        raise Exception('Application Secret must be provided.')
+    app_secret = app_secret if isinstance(app_secret, str) else ''
+    certificate_thumbprint = params.get('creds_certificate', {}).get('identifier') or params.get('certificate_thumbprint')
+    private_key = replace_spaces_in_credential(params.get('creds_certificate', {}).get('password')) or params.get('private_key')
+    managed_identities_client_id = get_azure_managed_identities_client_id(params)
 
     try:
         client = MsGraphClient(
@@ -143,11 +159,14 @@ def main() -> None:  # pragma: no cover
             verify=not params.get('insecure', False),
             proxy=params.get('proxy', False),
             azure_ad_endpoint=params.get('azure_ad_endpoint',
-                                         'https://login.microsoftonline.com') or 'https://login.microsoftonline.com'
+                                         'https://login.microsoftonline.com') or 'https://login.microsoftonline.com',
+            certificate_thumbprint=certificate_thumbprint,
+            private_key=private_key,
+            managed_identities_client_id=managed_identities_client_id,
         )
 
         if command == 'test-module':
-            result = test_module(client, params)
+            result = test_module(client, app_secret, params.get('tenant_id'), managed_identities_client_id)
             return_results(result)
         elif command == 'msgraph-api-request':
             return_results(generic_command(client, demisto.args()))
@@ -158,7 +177,6 @@ def main() -> None:  # pragma: no cover
         elif command == 'msgraph-api-test':
             return_results(test_command(client))
     except Exception as e:
-        demisto.error(traceback.format_exc())
         return_error(f'Failed to execute {demisto.command()} command. Error: {str(e)}')
 
 

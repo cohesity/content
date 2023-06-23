@@ -18,10 +18,10 @@ configuration:
   display: Indicator Reputation
   name: feedReputation
   options:
-    - None
-    - Good
-    - Suspicious
-    - Bad
+  - None
+  - Good
+  - Suspicious
+  - Bad
   required: false
   type: 18
 - additionalinfo: Reliability of the source providing the intelligence data
@@ -51,10 +51,10 @@ configuration:
   name: feedExpirationPolicy
   display: ""
   options:
-    - never
-    - interval
-    - indicatorType
-    - suddenDeath
+  - never
+  - interval
+  - indicatorType
+  - suddenDeath
   required: false
   type: 17
 - defaultvalue: '20160'
@@ -74,9 +74,7 @@ configuration:
   name: feedFetchInterval
   required: false
   type: 19
-- additionalinfo: When selected, the exclusion list is ignored for indicators from this
-    feed. This means that if an indicator from this feed is on the exclusion list, the
-    indicator might still be added to the system.
+- additionalinfo: When selected, the exclusion list is ignored for indicators from this feed. This means that if an indicator from this feed is on the exclusion list, the indicator might still be added to the system.
   display: Bypass exclusion list
   name: feedBypassExclusionList
   required: false
@@ -91,12 +89,11 @@ configuration:
   type: 8
 - additionalinfo: Supports CSV values.
   display: Tags
-  hidden: false
   name: feedTags
   required: false
   type: 0
-description: Use the AutoFocus Daily feed to export threat intelligence data produced by AutoFocus and connected services to provide actionable data for the Palo Alto Networks firewall as well as third party TIP and SIEM solutions. AutoFocus feed return a list which includes IP addresses, domains, URLs, and hash indicators which are updated daily.
-display: AutoFocus Daily Feed
+description: Deprecated. No available replacement.
+display: AutoFocus Daily Feed (Deprecated)
 name: AutoFocus Daily Feed
 script:
   commands:
@@ -119,7 +116,7 @@ script:
     description: Gets indicators from AutoFocus.
     execution: false
     name: autofocus-daily-get-indicators
-  dockerimage: demisto/python3:3.9.8.24399
+  dockerimage: demisto/python3:3.10.1.25933
   feed: true
   isfetch: false
   longRunning: false
@@ -129,5 +126,6 @@ script:
   subtype: python3
   type: python
 fromversion: 5.5.0
+deprecated: true
 tests:
-  - No tests
+- No tests

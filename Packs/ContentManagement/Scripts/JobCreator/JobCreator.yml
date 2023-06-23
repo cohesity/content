@@ -8,7 +8,6 @@ args:
 commonfields:
   id: JobCreator
   version: -1
-enabled: false
 name: JobCreator
 comment: Job Creator for the Content Management pack.
 outputs:
@@ -23,7 +22,9 @@ tags:
 - Content Management
 timeout: '0'
 type: python
-dockerimage: demisto/xsoar-tools:1.0.0.23423
+dockerimage: demisto/xsoar-tools:1.0.0.42327
 tests:
 - No tests (auto formatted)
 fromversion: 6.0.0
+marketplaces:
+- xsoar

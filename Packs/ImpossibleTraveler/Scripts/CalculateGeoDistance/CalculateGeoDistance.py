@@ -2,8 +2,8 @@ import demistomock as demisto
 from CommonServerPython import *
 from CommonServerUserPython import *
 import geopy.distance
-
-requests.packages.urllib3.disable_warnings()
+import urllib3
+urllib3.disable_warnings()
 
 try:
     # Extract each set of coordinates and create a list
@@ -15,7 +15,7 @@ try:
     dest_coords = (float(dest_coords_list[0]), float(dest_coords_list[1]))
 
     # Compute distance between the set in miles
-    geo_distance = round(geopy.distance.vincenty(src_coords, dest_coords).miles, 2)
+    geo_distance = round(geopy.distance.geodesic(src_coords, dest_coords).miles, 2)
     hr = 'Calculated Distance: {} miles.'.format(str(geo_distance))
     context = {
         "Geo.Distance": geo_distance,

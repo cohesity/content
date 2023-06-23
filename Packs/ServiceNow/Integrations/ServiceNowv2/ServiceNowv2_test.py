@@ -1,16 +1,23 @@
+import re
+
 import pytest
 import json
 import io
+from datetime import datetime, timedelta
+from freezegun import freeze_time
 import ServiceNowv2
-from CommonServerPython import DemistoException
+import requests
+from CommonServerPython import DemistoException, EntryType
 from ServiceNowv2 import get_server_url, get_ticket_context, get_ticket_human_readable, \
     generate_body, split_fields, Client, update_ticket_command, create_ticket_command, delete_ticket_command, \
     query_tickets_command, add_link_command, add_comment_command, upload_file_command, get_ticket_notes_command, \
     get_record_command, update_record_command, create_record_command, delete_record_command, query_table_command, \
     list_table_fields_command, query_computers_command, get_table_name_command, add_tag_command, query_items_command, \
     get_item_details_command, create_order_item_command, document_route_to_table, fetch_incidents, main, \
-    get_mapping_fields_command, get_remote_data_command, update_remote_system_command, build_query_for_request_params, \
-    ServiceNowClient, oauth_test_module, login_command, get_modified_remote_data_command, parse_build_query, get_ticket_fields
+    get_mapping_fields_command, get_remote_data_command, update_remote_system_command, \
+    ServiceNowClient, oauth_test_module, login_command, get_modified_remote_data_command, \
+    get_ticket_fields, check_assigned_to_field, generic_api_call_command, get_closure_case, converts_state_close_reason, \
+    get_timezone_offset, split_notes, DATE_FORMAT, convert_to_notes_result, DATE_FORMAT_OPTIONS
 from ServiceNowv2 import test_module as module
 from test_data.response_constants import RESPONSE_TICKET, RESPONSE_MULTIPLE_TICKET, RESPONSE_UPDATE_TICKET, \
     RESPONSE_UPDATE_TICKET_SC_REQ, RESPONSE_CREATE_TICKET, RESPONSE_CREATE_TICKET_WITH_OUT_JSON, RESPONSE_QUERY_TICKETS, \
@@ -21,8 +28,10 @@ from test_data.response_constants import RESPONSE_TICKET, RESPONSE_MULTIPLE_TICK
     RESPONSE_CREATE_ITEM_ORDER, RESPONSE_DOCUMENT_ROUTE, RESPONSE_FETCH, RESPONSE_FETCH_ATTACHMENTS_FILE, \
     RESPONSE_FETCH_ATTACHMENTS_TICKET, RESPONSE_TICKET_MIRROR, MIRROR_COMMENTS_RESPONSE, RESPONSE_MIRROR_FILE_ENTRY, \
     RESPONSE_ASSIGNMENT_GROUP, RESPONSE_MIRROR_FILE_ENTRY_FROM_XSOAR, MIRROR_COMMENTS_RESPONSE_FROM_XSOAR, \
-    MIRROR_ENTRIES, RESPONSE_CLOSING_TICKET_MIRROR, RESPONSE_TICKET_ASSIGNED, OAUTH_PARAMS, \
-    RESPONSE_QUERY_TICKETS_EXCLUDE_REFERENCE_LINK, MIRROR_ENTRIES_WITH_EMPTY_USERNAME
+    MIRROR_ENTRIES, RESPONSE_CLOSING_TICKET_MIRROR_CLOSED, RESPONSE_CLOSING_TICKET_MIRROR_RESOLVED, \
+    RESPONSE_CLOSING_TICKET_MIRROR_CUSTOM, RESPONSE_TICKET_ASSIGNED, OAUTH_PARAMS, \
+    RESPONSE_QUERY_TICKETS_EXCLUDE_REFERENCE_LINK, MIRROR_ENTRIES_WITH_EMPTY_USERNAME, USER_RESPONSE, \
+    RESPONSE_GENERIC_TICKET, RESPONSE_COMMENTS_DISPLAY_VALUE, RESPONSE_COMMENTS_DISPLAY_VALUE_NO_COMMENTS
 from test_data.result_constants import EXPECTED_TICKET_CONTEXT, EXPECTED_MULTIPLE_TICKET_CONTEXT, \
     EXPECTED_TICKET_HR, EXPECTED_MULTIPLE_TICKET_HR, EXPECTED_UPDATE_TICKET, EXPECTED_UPDATE_TICKET_SC_REQ, \
     EXPECTED_CREATE_TICKET, EXPECTED_CREATE_TICKET_WITH_OUT_JSON, EXPECTED_QUERY_TICKETS, EXPECTED_ADD_LINK_HR, \
@@ -32,7 +41,7 @@ from test_data.result_constants import EXPECTED_TICKET_CONTEXT, EXPECTED_MULTIPL
     EXPECTED_QUERY_TABLE_SYS_PARAMS, EXPECTED_ADD_TAG, EXPECTED_QUERY_ITEMS, EXPECTED_ITEM_DETAILS, \
     EXPECTED_CREATE_ITEM_ORDER, EXPECTED_DOCUMENT_ROUTE, EXPECTED_MAPPING, \
     EXPECTED_TICKET_CONTEXT_WITH_ADDITIONAL_FIELDS, EXPECTED_QUERY_TICKETS_EXCLUDE_REFERENCE_LINK, \
-    EXPECTED_TICKET_CONTEXT_WITH_NESTED_ADDITIONAL_FIELDS
+    EXPECTED_TICKET_CONTEXT_WITH_NESTED_ADDITIONAL_FIELDS, EXPECTED_GET_TICKET_NOTES_DISPLAY_VALUE
 from test_data.created_ticket_context import CREATED_TICKET_CONTEXT_CREATE_CO_FROM_TEMPLATE_COMMAND, \
     CREATED_TICKET_CONTEXT_GET_TASKS_FOR_CO_COMMAND
 
@@ -114,12 +123,9 @@ def test_split_fields():
     assert expected_custom_sys_params == split_fields(
         "sysparm_display_value=all;sysparm_exclude_reference_link=True;sysparm_query=number=TASK0000001")
 
-    try:
+    with pytest.raises(Exception) as err:
         split_fields('a')
-    except Exception as err:
-        assert "must contain a '=' to specify the keys and values" in str(err)
-        return
-    assert False
+    assert "must contain a '=' to specify the keys and values" in str(err)
 
 
 def test_split_fields_with_special_delimiter():
@@ -138,31 +144,139 @@ def test_split_fields_with_special_delimiter():
     expected_custom_field = {'u_customfield': "<a href=\'https://google.com\'>Link text<;/a>"}
     assert expected_custom_field == split_fields("u_customfield=<a href=\'https://google.com\'>Link text<;/a>", ',')
 
-    try:
+    with pytest.raises(Exception) as e:
         split_fields('a')
-    except Exception as err:
-        assert "must contain a '=' to specify the keys and values" in str(err)
-        return
-    assert False
+    assert "must contain a '=' to specify the keys and values" in str(e)
 
 
-@pytest.mark.parametrize('query, parsed, result', [
-    ('&', False, '&'),
-    ('&', True, []),
-    ('noampersand', False, 'noampersand'),
-    ('noampersand', True, 'noampersand')
-])
-def test_parse_build_query(query, parsed, result):
-    """Unit test
-    Given
-    - an ampersand
-    When
-    - no parsing the ampersand
-    - when parsing the ampersand
-    Then
-    -  Validate the query field is parsed correctly.
+def test_convert_to_notes_result():
     """
-    assert parse_build_query(query, parse_amp=parsed) == result
+    Given:
+        - The full response for a ticket from SNOW.
+    When:
+        - Converting the comments and work notes to the format used in the integration.
+    Then:
+        - Verify that the expected notes are returned in the correct format.
+    """
+    # Note: the 'display_value' time is the local time of the SNOW instance, and the 'value' is in UTC.
+    # The results returned for notes are expected to be in UTC time.
+
+    expected_result = {'result': [{'sys_created_on': '2022-11-21 21:50:34',
+                                   'value': 'Second comment\n\n Mirrored from Cortex XSOAR',
+                                   'sys_created_by': 'System Administrator',
+                                   'element': 'comments'
+                                   },
+                                  {'sys_created_on': '2022-11-21 20:45:37',
+                                   'value': 'First comment',
+                                   'sys_created_by': 'Test User',
+                                   'element': 'comments'
+                                   }]}
+    assert convert_to_notes_result(RESPONSE_COMMENTS_DISPLAY_VALUE,
+                                   time_info={'display_date_format': DATE_FORMAT}) == expected_result
+
+    # Filter comments by creation time (filter is given in UTC):
+    expected_result = {'result': [{'sys_created_on': '2022-11-21 21:50:34',
+                                   'value': 'Second comment\n\n Mirrored from Cortex XSOAR',
+                                   'sys_created_by': 'System Administrator',
+                                   'element': 'comments'
+                                   }]}
+    assert convert_to_notes_result(RESPONSE_COMMENTS_DISPLAY_VALUE,
+                                   time_info={'display_date_format': DATE_FORMAT,
+                                              'filter': datetime.strptime('2022-11-21 21:44:37',
+                                                                          DATE_FORMAT)}) == expected_result
+
+    ticket_response = {'result': []}
+    assert convert_to_notes_result(ticket_response, time_info={'display_date_format': DATE_FORMAT}) == []
+
+    assert convert_to_notes_result(RESPONSE_COMMENTS_DISPLAY_VALUE_NO_COMMENTS,
+                                   time_info={'display_date_format': DATE_FORMAT}) == {'result': []}
+
+
+def test_split_notes():
+    """
+    Given:
+        - Notes response from SNOW.
+        - The type of the note (comment or work_note).
+        - The UTC timezone offset and (optionally) a time filter.
+    When:
+        - Converting the given notes to the note format used in the integration with different time filters.
+    Then:
+        - Verify that the expected notes are returned in the correct format.
+    """
+    # Note: the timezone in the raw_notes should mimic the local time of the SNOW instance,
+    # the time in the filter is in UTC (to mimic the behaviour of fetching).
+    # timezone_offset is the difference between UTC and local time, e.g. offset = -60, means that local time is UTC+1.
+    # The 'sys_created_on' time, returned by the command is normalized to UTC timezone.
+
+    raw_notes = '2022-11-21 22:50:34 - System Administrator (Additional comments)\nSecond comment\n\n Mirrored from ' \
+                'Cortex XSOAR\n\n2022-11-21 21:45:37 - Test User (Additional comments)\nFirst comment\n\n'
+
+    time_info = {'timezone_offset': timedelta(minutes=0),
+                 'filter': datetime.strptime('2022-11-21 21:44:37', DATE_FORMAT),
+                 'display_date_format': DATE_FORMAT}
+    notes = split_notes(raw_notes, 'comments', time_info)
+    expected_notes = [{'sys_created_on': '2022-11-21 22:50:34',
+                       'value': 'Second comment\n\n Mirrored from Cortex XSOAR',
+                       'sys_created_by': 'System Administrator',
+                       'element': 'comments'
+                       },
+                      {'sys_created_on': '2022-11-21 21:45:37',
+                       'value': 'First comment',
+                       'sys_created_by': 'Test User',
+                       'element': 'comments'
+                       }]
+    assert notes == expected_notes
+
+    raw_notes = '21/11/2022 22:50:34 - System Administrator (Additional comments)\nSecond comment\n\n Mirrored from ' \
+                'Cortex XSOAR\n\n21/11/2022 21:45:37 - Test User (Additional comments)\nFirst comment\n\n'
+    time_info = {'timezone_offset': timedelta(minutes=-60),
+                 'filter': datetime.strptime('2022-11-21 21:44:37', DATE_FORMAT),
+                 'display_date_format': DATE_FORMAT_OPTIONS.get('dd/MM/yyyy')}
+    notes = split_notes(raw_notes, 'comments', time_info)
+    expected_notes = [{'sys_created_on': '2022-11-21 21:50:34',
+                       'value': 'Second comment\n\n Mirrored from Cortex XSOAR',
+                       'sys_created_by': 'System Administrator',
+                       'element': 'comments'
+                       }]
+    assert notes == expected_notes
+
+    raw_notes = '11-21-2022 22:50:34 - System Administrator (Additional comments)\nSecond comment\n\n Mirrored from ' \
+                'Cortex XSOAR\n\n11-21-2022 21:45:37 - Test User (Additional comments)\nFirst comment\n\n'
+    time_info = {'timezone_offset': timedelta(minutes=-120),
+                 'filter': datetime.strptime('2022-11-21 21:44:37', DATE_FORMAT),
+                 'display_date_format': DATE_FORMAT_OPTIONS.get('MM-dd-yyyy')}
+    notes = split_notes(raw_notes, 'comments', time_info)
+    assert len(notes) == 0
+
+
+def test_get_timezone_offset():
+    """
+    Given:
+        - A response from a SNOW ticket created with 'sysparm_display_value=all'.
+    When:
+        - Testing different instance and UTC times.
+    Then:
+        - Assert the offset between the UTC and the instance times are correct.
+    """
+    full_response = {
+        'result': {'sys_created_on': {'display_value': '2022-12-07 05:38:52', 'value': '2022-12-07 13:38:52'}}}
+    offset = get_timezone_offset(full_response, display_date_format=DATE_FORMAT)
+    assert offset == timedelta(minutes=480)
+
+    full_response = {
+        'result': {'sys_created_on': {'display_value': '12-07-2022 15:47:34', 'value': '2022-12-07 13:47:34'}}}
+    offset = get_timezone_offset(full_response, display_date_format=DATE_FORMAT_OPTIONS.get('MM-dd-yyyy'))
+    assert offset == timedelta(minutes=-120)
+
+    full_response = {
+        'result': {'sys_created_on': {'display_value': '06/12/2022 23:38:52', 'value': '2022-12-07 09:38:52'}}}
+    offset = get_timezone_offset(full_response, display_date_format=DATE_FORMAT_OPTIONS.get('dd/MM/yyyy'))
+    assert offset == timedelta(minutes=600)
+
+    full_response = {
+        'result': {'sys_created_on': {'display_value': '07.12.2022 0:38:52', 'value': '2022-12-06 19:38:52'}}}
+    offset = get_timezone_offset(full_response, display_date_format=DATE_FORMAT_OPTIONS.get('dd.MM.yyyy'))
+    assert offset == timedelta(minutes=-300)
 
 
 @pytest.mark.parametrize('command, args, response, expected_result, expected_auto_extract', [
@@ -184,6 +298,10 @@ def test_parse_build_query(query, parsed, result):
     (upload_file_command, {'id': "sys_id", 'file_id': "entry_id", 'file_name': 'test_file'}, RESPONSE_UPLOAD_FILE,
      EXPECTED_UPLOAD_FILE, True),
     (get_ticket_notes_command, {'id': "sys_id"}, RESPONSE_GET_TICKET_NOTES, EXPECTED_GET_TICKET_NOTES, True),
+    (get_ticket_notes_command, {'id': 'sys_id', 'use_display_value': 'true', 'display_date_format': DATE_FORMAT},
+     RESPONSE_COMMENTS_DISPLAY_VALUE, EXPECTED_GET_TICKET_NOTES_DISPLAY_VALUE, True),
+    (get_ticket_notes_command, {'id': 'sys_id', 'use_display_value': 'true', 'display_date_format': DATE_FORMAT},
+     RESPONSE_COMMENTS_DISPLAY_VALUE_NO_COMMENTS, {}, True),
     (get_record_command, {'table_name': "alm_asset", 'id': "sys_id", 'fields': "asset_tag,display_name"},
      RESPONSE_GET_RECORD, EXPECTED_GET_RECORD, True),
     (update_record_command, {'name': "alm_asset", 'id': "1234", 'custom_fields': "display_name=test4"},
@@ -226,7 +344,7 @@ def test_commands(command, args, response, expected_result, expected_auto_extrac
     """
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
                     'verify', 'fetch_time', 'sysparm_query', 'sysparm_limit', 'timestamp_field',
-                    'ticket_type', 'get_attachments', 'incident_name')
+                    'ticket_type', 'get_attachments', 'incident_name', display_date_format='yyyy-MM-dd')
     mocker.patch.object(client, 'send_request', return_value=response)
     result = command(client, args)
     assert expected_result == result[1]  # entry context is found in the 2nd place in the result of the command
@@ -263,6 +381,7 @@ def test_no_ec_commands(command, args, response, expected_hr, expected_auto_extr
     assert expected_auto_extract == result[3]  # ignore_auto_extract is in the 4th place in the result of the command
 
 
+@freeze_time('2022-05-01 12:52:29')
 def test_fetch_incidents(mocker):
     """Unit test
     Given
@@ -276,9 +395,14 @@ def test_fetch_incidents(mocker):
     - run the fetch incidents command using the Client
     Validate The length of the results.
     """
-    mocker.patch('ServiceNowv2.parse_date_range', return_value=("2019-02-23 08:14:21", 'never mind'))
+    RESPONSE_FETCH['result'][0]['opened_at'] = (datetime.utcnow() - timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
+    RESPONSE_FETCH['result'][1]['opened_at'] = (datetime.utcnow() - timedelta(minutes=8)).strftime('%Y-%m-%d %H:%M:%S')
+    mocker.patch(
+        'CommonServerPython.get_fetch_run_time_range', return_value=('2022-05-01 01:05:07', '2022-05-01 12:08:29')
+    )
+    mocker.patch('ServiceNowv2.parse_dict_ticket_fields', return_value=RESPONSE_FETCH['result'])
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
-                    'verify', 'fetch_time', 'sysparm_query', sysparm_limit=10,
+                    'verify', '2 days', 'sysparm_query', sysparm_limit=10,
                     timestamp_field='opened_at', ticket_type='incident', get_attachments=False, incident_name='number')
     mocker.patch.object(client, 'send_request', return_value=RESPONSE_FETCH)
     incidents = fetch_incidents(client)
@@ -286,6 +410,38 @@ def test_fetch_incidents(mocker):
     assert incidents[0].get('name') == 'ServiceNow Incident INC0000040'
 
 
+@freeze_time('2022-05-01 12:52:29')
+def test_fetch_incidents_with_changed_fetch_limit(mocker):
+    """Unit test
+    Given
+    - fetch incidents command
+    - command args
+    - command raw response
+    When
+    - mock the parse_date_range.
+    - mock the Client's send_request.
+    Then
+    - run the fetch incidents command using the Client
+    Validate The number of fetch_limit in the last_run
+    """
+    RESPONSE_FETCH['result'][0]['opened_at'] = (datetime.utcnow() - timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
+    RESPONSE_FETCH['result'][1]['opened_at'] = (datetime.utcnow() - timedelta(minutes=8)).strftime('%Y-%m-%d %H:%M:%S')
+    mocker.patch(
+        'CommonServerPython.get_fetch_run_time_range', return_value=('2022-05-01 01:05:07', '2022-05-01 12:08:29')
+    )
+    mocker.patch('ServiceNowv2.parse_dict_ticket_fields', return_value=RESPONSE_FETCH['result'])
+    client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
+                    'verify', '2 days', 'sysparm_query', sysparm_limit=20,
+                    timestamp_field='opened_at', ticket_type='incident', get_attachments=False, incident_name='number')
+    mocker.patch.object(client, 'send_request', return_value=RESPONSE_FETCH)
+    mocker.patch.object(demisto, 'getLastRun', return_value={'limit': 10})
+    set_last_run = mocker.patch.object(demisto, 'setLastRun')
+    fetch_incidents(client)
+
+    assert set_last_run.call_args[0][0].get('limit') == 20
+
+
+@freeze_time('2022-05-01 12:52:29')
 def test_fetch_incidents_with_attachments(mocker):
     """Unit test
     Given
@@ -300,9 +456,15 @@ def test_fetch_incidents_with_attachments(mocker):
     - run the fetch incidents command using the Client
     Validate The length of the results and the attachment content.
     """
-    mocker.patch('ServiceNowv2.parse_date_range', return_value=("2016-10-10 15:19:57", 'never mind'))
+    RESPONSE_FETCH_ATTACHMENTS_TICKET['result'][0]['opened_at'] = (
+        datetime.utcnow() - timedelta(minutes=15)
+    ).strftime('%Y-%m-%d %H:%M:%S')
+    mocker.patch(
+        'CommonServerPython.get_fetch_run_time_range', return_value=('2022-05-01 01:05:07', '2022-05-01 12:08:29')
+    )
+    mocker.patch('ServiceNowv2.parse_dict_ticket_fields', return_value=RESPONSE_FETCH['result'])
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
-                    'verify', 'fetch_time', 'sysparm_query', sysparm_limit=10,
+                    'verify', '2 days', 'sysparm_query', sysparm_limit=10,
                     timestamp_field='opened_at', ticket_type='incident', get_attachments=True,
                     incident_name='number')
     mocker.patch.object(client, 'send_request', return_value=RESPONSE_FETCH_ATTACHMENTS_TICKET)
@@ -315,6 +477,7 @@ def test_fetch_incidents_with_attachments(mocker):
     assert incidents[0].get('attachment')[0]['path'] == 'file_id'
 
 
+@freeze_time('2022-05-01 12:52:29')
 def test_fetch_incidents_with_incident_name(mocker):
     """Unit test
     Given
@@ -328,14 +491,371 @@ def test_fetch_incidents_with_incident_name(mocker):
     - run the fetch incidents command using the Client
     Validate The length of the results.
     """
-    mocker.patch('ServiceNowv2.parse_date_range', return_value=("2019-02-23 08:14:21", 'never mind'))
+    RESPONSE_FETCH['result'][0]['opened_at'] = (datetime.utcnow() - timedelta(minutes=15)).strftime('%Y-%m-%d %H:%M:%S')
+    RESPONSE_FETCH['result'][1]['opened_at'] = (datetime.utcnow() - timedelta(minutes=8)).strftime('%Y-%m-%d %H:%M:%S')
+    mocker.patch('ServiceNowv2.parse_dict_ticket_fields', return_value=RESPONSE_FETCH['result'])
+    mocker.patch(
+        'CommonServerPython.get_fetch_run_time_range', return_value=('2022-05-01 01:05:07', '2022-05-01 12:08:29')
+    )
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
-                    'verify', 'fetch_time', 'sysparm_query', sysparm_limit=10,
+                    'verify', '2 days', 'sysparm_query', sysparm_limit=10,
                     timestamp_field='opened_at', ticket_type='incident',
                     get_attachments=False, incident_name='description')
     mocker.patch.object(client, 'send_request', return_value=RESPONSE_FETCH)
     incidents = fetch_incidents(client)
     assert incidents[0].get('name') == 'ServiceNow Incident Unable to access Oregon mail server. Is it down?'
+
+
+def start_freeze_time(timestamp):
+    _start_freeze_time = freeze_time(timestamp)
+    _start_freeze_time.start()
+    return datetime.now()
+
+
+class TestFetchIncidentsWithLookBack:
+    LAST_RUN = {}
+
+    API_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+    FREEZE_TIMESTAMP = '2022-05-01 12:52:29'
+
+    def set_last_run(self, new_last_run):
+        self.LAST_RUN = new_last_run
+
+    @pytest.mark.parametrize(
+        'start_incidents, phase2_incident, phase3_incident, look_back',
+        [
+            (
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=10)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '2',
+                            'sys_id': '2'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=5)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '4',
+                            'sys_id': '4'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=2)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '5',
+                            'sys_id': '5'
+                        }
+                    ]
+                },
+                {
+                    'opened_at': (
+                        start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=8)
+                    ).strftime(API_TIME_FORMAT),
+                    'severity': '1',
+                    'number': '3',
+                    'sys_id': '3'
+                },
+                {
+                    'opened_at': (
+                        start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=11)
+                    ).strftime(API_TIME_FORMAT),
+                    'severity': '1',
+                    'number': '1',
+                    'sys_id': '1'
+                },
+                15
+            ),
+            (
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=3, minutes=20)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '2',
+                            'sys_id': '2'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=2, minutes=26)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '4',
+                            'sys_id': '4'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=1, minutes=20)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '5',
+                            'sys_id': '5'
+                        }
+                    ]
+                },
+                {
+                    'opened_at': (
+                        start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=2, minutes=45)
+                    ).strftime(API_TIME_FORMAT),
+                    'severity': '1',
+                    'number': '3',
+                    'sys_id': '3'
+                },
+                {
+                    'opened_at': (
+                        start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=3, minutes=50)
+                    ).strftime(API_TIME_FORMAT),
+                    'severity': '1',
+                    'number': '1',
+                    'sys_id': '1'
+                },
+                1000
+            )
+        ]
+    )
+    def test_fetch_incidents_with_look_back_greater_than_zero(
+            self, mocker, start_incidents, phase2_incident, phase3_incident, look_back
+    ):
+        """
+        Given
+        - fetch incidents parameters including look back according to their opened time.
+        - first scenario - fetching with minutes when look_back=60 minutes
+        - second scenario - fetching with hours when look_back=1000 minutes
+
+        When
+        - trying to fetch incidents for 3 rounds.
+
+        Then
+        - first fetch - should fetch incidents 2, 4, 5 (because only them match the query)
+        - second fetch - should fetch incident 3 (because now incident 2, 4, 5, 3 matches the query too)
+        - third fetch - should fetch incident 1 (because now incident 2, 4, 5, 3, 1 matches the query too)
+        - fourth fetch - should fetch nothing as there are not new incidents who match the query
+        - make sure that incidents who were already fetched would not be fetched again.
+        """
+        client = Client(
+            server_url='', sc_server_url='', cr_server_url='', username='', password='', verify=False,
+            fetch_time='6 hours', sysparm_query='stateNOT IN6,7^assignment_group=123', sysparm_limit=10,
+            timestamp_field='opened_at', ticket_type='incident', get_attachments=False, incident_name='number',
+            look_back=look_back
+        )
+
+        # reset last run
+        self.LAST_RUN = {}
+
+        mocker.patch.object(demisto, 'getLastRun', return_value=self.LAST_RUN)
+        mocker.patch.object(demisto, 'setLastRun', side_effect=self.set_last_run)
+
+        mocker.patch.object(client, 'send_request', return_value=start_incidents)
+
+        # first fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 3
+        for expected_incident_id, ticket in zip(['2', '4', '5'], tickets):
+            assert ticket.get('name') == f'ServiceNow Incident {expected_incident_id}'
+
+        # second fetch preparation
+        start_incidents.get('result').append(phase2_incident)
+
+        # second fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 1
+        assert tickets[0].get('name') == 'ServiceNow Incident 3'
+
+        # third fetch preparation
+        start_incidents.get('result').append(phase3_incident)
+
+        # third fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 1
+        assert tickets[0].get('name') == 'ServiceNow Incident 1'
+
+        # forth fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 0
+
+    @pytest.mark.parametrize(
+        'incidents, phase2_incident, phase3_incident',
+        [
+            (
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=10)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '1',
+                            'sys_id': '1'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=8)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '2',
+                            'sys_id': '2'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=7)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '3',
+                            'sys_id': '3'
+                        }
+                    ]
+                },
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=5)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '4',
+                            'sys_id': '4'
+                        }
+                    ]
+                },
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(minutes=4)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '5',
+                            'sys_id': '5'
+                        }
+                    ]
+                },
+            ),
+            (
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=8, minutes=51)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '1',
+                            'sys_id': '1'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=7, minutes=45)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '2',
+                            'sys_id': '2'
+                        },
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=7, minutes=44)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '2',
+                            'number': '3',
+                            'sys_id': '3'
+                        }
+                    ]
+                },
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=7, minutes=44)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '4',
+                            'sys_id': '4'
+                        }
+                    ]
+                },
+                {
+                    'result': [
+                        {
+                            'opened_at': (
+                                start_freeze_time(FREEZE_TIMESTAMP) - timedelta(hours=1, minutes=34)
+                            ).strftime(API_TIME_FORMAT),
+                            'severity': '1',
+                            'number': '5',
+                            'sys_id': '5'
+                        }
+                    ]
+                }
+            )
+        ]
+    )
+    def test_fetch_incidents_with_look_back_equals_zero(
+            self, mocker, incidents, phase2_incident, phase3_incident
+    ):
+        """
+        Given
+        - fetch incidents parameters with any look back according to their opened time (normal fetch incidents).
+        - first scenario - fetching with minutes when look_back=0
+        - second scenario - fetching with hours when look_back=0
+
+        When
+        - trying to fetch incidents for 3 rounds.
+
+        Then
+        - first fetch - should fetch incidents 1, 2, 3 (because only them match the query)
+        - second fetch - should fetch incident 4
+        - third fetch - should fetch incident 5
+        - fourth fetch - should fetch nothing as there are not new incidents who match the query
+        """
+        client = Client(
+            server_url='', sc_server_url='', cr_server_url='', username='', password='', verify=False,
+            fetch_time='12 hours', sysparm_query='stateNOT IN6,7^assignment_group=123', sysparm_limit=10,
+            timestamp_field='opened_at', ticket_type='incident', get_attachments=False, incident_name='number',
+            look_back=0
+        )
+
+        # reset last fetch and tickets
+        self.LAST_RUN = {}
+
+        mocker.patch.object(demisto, 'getLastRun', return_value=self.LAST_RUN)
+        mocker.patch.object(demisto, 'setLastRun', side_effect=self.set_last_run)
+        mocker.patch.object(client, 'send_request', return_value=incidents)
+
+        # first fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 3
+        for expected_incident_id, ticket in zip(['1', '2', '3'], tickets):
+            assert ticket.get('name') == f'ServiceNow Incident {expected_incident_id}'
+
+        # second fetch preparation
+        incidents = phase2_incident
+        mocker.patch.object(client, 'send_request', return_value=incidents)
+
+        # second fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 1
+        assert tickets[0].get('name') == 'ServiceNow Incident 4'
+
+        # third fetch preparation
+        incidents = phase3_incident
+        mocker.patch.object(client, 'send_request', return_value=incidents)
+
+        # third fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 1
+        assert tickets[0].get('name') == 'ServiceNow Incident 5'
+
+        # forth fetch preparation
+        incidents = {'result': []}
+        mocker.patch.object(client, 'send_request', return_value=incidents)
+
+        # forth fetch
+        tickets = fetch_incidents(client=client)
+        assert len(tickets) == 0
 
 
 def test_incident_name_is_initialized(mocker, requests_mock):
@@ -360,7 +880,13 @@ def test_incident_name_is_initialized(mocker, requests_mock):
                 'identifier': 'identifier',
                 'password': 'password',
             },
-            'incident_name': None
+            'incident_name': None,
+            'file_tag_from_service_now': 'FromServiceNow',
+            'file_tag_to_service_now': 'ToServiceNow',
+            'comment_tag': 'comments',
+            'comment_tag_from_servicenow': 'CommentFromServiceNow',
+            'work_notes_tag': 'work_notes',
+            'work_notes_tag_from_servicenow': 'WorkNoteFromServiceNow'
         }
     )
     mocker.patch.object(demisto, 'command', return_value='test-module')
@@ -380,6 +906,33 @@ def test_incident_name_is_initialized(mocker, requests_mock):
     with pytest.raises(ValueError) as e:
         main()
     assert str(e.value) == 'The field [number] does not exist in the ticket.'
+
+
+def test_file_tags_names_are_the_same_main_flow(mocker):
+    """
+    Given:
+     - file tags from service now & file tag to service now that are identical
+
+    When:
+     - running main flow
+
+    Then:
+     - make sure an exception is raised
+    """
+    import ServiceNowv2
+    mocker.patch.object(
+        demisto,
+        'params',
+        return_value={'file_tag_from_service_now': 'ServiceNow', 'file_tag': 'ServiceNow'}
+    )
+    mocker.patch.object(ServiceNowv2, 'get_server_url', return_value='test')
+    with pytest.raises(
+            Exception,
+            match=re.escape(
+                'File Entry Tag To ServiceNow and File Entry Tag From ServiceNow cannot be the same name [ServiceNow].'
+            )
+    ):
+        main()
 
 
 def test_not_authenticated_retry_positive(requests_mock, mocker):
@@ -514,7 +1067,13 @@ def test_oauth_authentication(mocker, requests_mock):
                 'identifier': 'client_id',
                 'password': 'client_secret'
             },
-            'use_oauth': True
+            'use_oauth': True,
+            'file_tag_from_service_now': 'FromServiceNow',
+            'file_tag': 'ForServiceNow',
+            'comment_tag': 'comments',
+            'comment_tag_from_servicenow': 'CommentFromServiceNow',
+            'work_notes_tag': 'work_notes',
+            'work_notes_tag_from_servicenow': 'WorkNoteFromServiceNow'
         }
     )
     ServiceNowClient.get_access_token = MagicMock()
@@ -552,10 +1111,9 @@ def test_test_module(mocker):
                     'sysparm_query', sysparm_limit=10, timestamp_field='opened_at', ticket_type='incident',
                     get_attachments=False, incident_name='description', oauth_params=OAUTH_PARAMS)
 
-    try:
+    with pytest.raises(Exception) as e:
         module(client)
-    except Exception as e:
-        assert 'Test button cannot be used when using OAuth 2.0' in e.args[0]
+    assert 'Test button cannot be used when using OAuth 2.0' in str(e)
 
 
 def test_oauth_test_module(mocker):
@@ -576,10 +1134,9 @@ def test_oauth_test_module(mocker):
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password', 'verify', 'fetch_time',
                     'sysparm_query', sysparm_limit=10, timestamp_field='opened_at', ticket_type='incident',
                     get_attachments=False, incident_name='description')
-    try:
+    with pytest.raises(Exception) as e:
         oauth_test_module(client)
-    except Exception as e:
-        assert 'command should be used only when using OAuth 2.0 authorization.' in e.args[0]
+    assert 'command should be used only when using OAuth 2.0 authorization.' in str(e)
 
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password', 'verify', 'fetch_time',
                     'sysparm_query', sysparm_limit=10, timestamp_field='opened_at', ticket_type='incident',
@@ -606,10 +1163,9 @@ def test_oauth_login_command(mocker):
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password', 'verify', 'fetch_time',
                     'sysparm_query', sysparm_limit=10, timestamp_field='opened_at', ticket_type='incident',
                     get_attachments=False, incident_name='description')
-    try:
+    with pytest.raises(Exception) as e:
         login_command(client, args={'username': 'username', 'password': 'password'})
-    except Exception as e:
-        assert '!servicenow-oauth-login command can be used only when using OAuth 2.0 authorization' in e.args[0]
+    assert '!servicenow-oauth-login command can be used only when using OAuth 2.0 authorization' in str(e)
 
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password', 'verify', 'fetch_time',
                     'sysparm_query', sysparm_limit=10, timestamp_field='opened_at', ticket_type='incident',
@@ -695,7 +1251,7 @@ def test_get_remote_data(mocker):
                     ticket_type='incident', get_attachments=False, incident_name='description')
 
     args = {'id': 'sys_id', 'lastUpdate': 0}
-    params = {}
+    params = {"file_tag_from_service_now": "FromServiceNow"}
     mocker.patch.object(client, 'get', return_value=RESPONSE_TICKET_MIRROR)
     mocker.patch.object(client, 'get_ticket_attachment_entries', return_value=RESPONSE_MIRROR_FILE_ENTRY)
     mocker.patch.object(client, 'query', return_value=MIRROR_COMMENTS_RESPONSE)
@@ -703,19 +1259,73 @@ def test_get_remote_data(mocker):
 
     res = get_remote_data_command(client, args, params)
 
+    assert res[1]['Tags'] == ['FromServiceNow']
     assert res[1]['File'] == 'test.txt'
-    assert res[2]['Contents'] == 'This is a comment'
+    assert res[2]['Contents'] == 'Type: comments\nCreated By: admin\nCreated On: 2020-08-17 06:31:49\nThis is a comment'
 
 
-CLOSING_RESPONSE = {'dbotIncidentClose': True, 'closeReason': 'From ServiceNow: Test'}
+def test_assigned_to_field_no_user():
+    """
+    Given:
+        -  Client class
+        -  Assigned_to field for user that doesn't exist in SNOW
+    When
+        - run check_assigned_to_field command
+    Then
+        - Check that assign_to value is empty
+    """
+
+    class Client:
+        def get(self, table, value, no_record_found_res):
+            return {'results': {}}
+
+    assigned_to = {'link': 'https://test.service-now.com/api/now/table/sys_user/oscar@example.com',
+                   'value': 'oscar@example.com'}
+    res = check_assigned_to_field(Client(), assigned_to)
+    assert res == ''
 
 
-def test_get_remote_data_closing_incident(mocker):
+def test_assigned_to_field_user_exists():
+    """
+    Given:
+        -  Client class
+        -  Assigned_to field for user that does exist in SNOW
+    When
+        - run check_assigned_to_field command
+    Then
+        - Check that assign_to value is filled with the right email
+    """
+
+    class Client:
+        def get(self, table, value, no_record_found_res):
+            return USER_RESPONSE
+
+    assigned_to = {'link': 'https://test.service-now.com/api/now/table/sys_user/oscar@example.com',
+                   'value': 'oscar@example.com'}
+    res = check_assigned_to_field(Client(), assigned_to)
+    assert res == 'oscar@example.com'
+
+
+CLOSING_RESPONSE = {'dbotIncidentClose': True, 'closeNotes': 'Test', 'closeReason': 'Resolved'}
+CLOSING_RESPONSE_CUSTOM = {'dbotIncidentClose': True, 'closeNotes': 'Test', 'closeReason': 'Test'}
+
+closed_ticket_state = (RESPONSE_CLOSING_TICKET_MIRROR_CLOSED, {
+                       'close_incident': 'closed'}, 'closed_at', CLOSING_RESPONSE)
+resolved_ticket_state = (RESPONSE_CLOSING_TICKET_MIRROR_RESOLVED, {
+                         'close_incident': 'resolved'}, 'resolved_at', CLOSING_RESPONSE)
+custom_ticket_state = (RESPONSE_CLOSING_TICKET_MIRROR_CUSTOM,
+                       {'close_incident': 'closed', 'server_close_custom_state': '9=Test'}, '', CLOSING_RESPONSE_CUSTOM)
+
+
+@pytest.mark.parametrize('response_closing_ticket_mirror, parameters, time, closing_response',
+                         [closed_ticket_state, resolved_ticket_state, custom_ticket_state])
+def test_get_remote_data_closing_incident(mocker, response_closing_ticket_mirror, parameters, time, closing_response):
     """
     Given:
         -  ServiceNow client
         -  arguments: id and LastUpdate(set to lower then the modification time).
-        -  ServiceNow ticket
+        -  ServiceNow ticket in closed state
+        -  close_incident parameter is set to closed
     When
         - running get_remote_data_command.
     Then
@@ -731,14 +1341,46 @@ def test_get_remote_data_closing_incident(mocker):
                     ticket_type='sc_task', get_attachments=False, incident_name='description')
 
     args = {'id': 'sys_id', 'lastUpdate': 0}
-    params = {'close_incident': True}
-    mocker.patch.object(client, 'get', return_value=RESPONSE_CLOSING_TICKET_MIRROR)
+    params = parameters
+    mocker.patch.object(client, 'get', return_value=response_closing_ticket_mirror)
     mocker.patch.object(client, 'get_ticket_attachment_entries', return_value=[])
     mocker.patch.object(client, 'query', return_value=MIRROR_COMMENTS_RESPONSE)
 
     res = get_remote_data_command(client, args, params)
-    assert 'closed_at' in res[0]
-    assert CLOSING_RESPONSE == res[2]['Contents']
+    if time:
+        assert time in res[0]
+    assert closing_response == res[2]['Contents']
+
+
+def test_get_remote_data_closing_incident_with_different_closing_state(mocker):
+    """
+    Given:
+        -  ServiceNow client
+        -  arguments: id and LastUpdate(set to lower then the modification time).
+        -  ServiceNow ticket in closed state
+        -  close_incident parameter is set to closed
+        -  server_close_custom_state parameter differs from the ticket's closing state
+    When
+        - running get_remote_data_command.
+    Then
+        - Validate that the incident does not get closed
+    """
+
+    client = Client(server_url='https://server_url.com/', sc_server_url='sc_server_url',
+                    cr_server_url="cr_server_url", username='username',
+                    password='password', verify=False, fetch_time='fetch_time',
+                    sysparm_query='sysparm_query', sysparm_limit=10, timestamp_field='opened_at',
+                    ticket_type='sc_task', get_attachments=False, incident_name='description')
+
+    args = {'id': 'sys_id', 'lastUpdate': 0}
+    params = {'close_incident': 'closed', 'server_close_custom_state': '6=Design'}
+    mocker.patch.object(client, 'get', return_value=RESPONSE_CLOSING_TICKET_MIRROR_CUSTOM)
+    mocker.patch.object(client, 'get_ticket_attachment_entries', return_value=[])
+    mocker.patch.object(client, 'query', return_value=MIRROR_COMMENTS_RESPONSE)
+    res = get_remote_data_command(client, args, params)
+    assert len(res) == 2
+    # This means that the entry is of type Note, which does not indicate the closing of the incident
+    assert res[1].get('Note', False) is True
 
 
 def test_get_remote_data_no_attachment(mocker):
@@ -768,7 +1410,7 @@ def test_get_remote_data_no_attachment(mocker):
     mocker.patch.object(client, 'get', return_value=RESPONSE_ASSIGNMENT_GROUP)
 
     res = get_remote_data_command(client, args, params)
-    assert res[1]['Contents'] == 'This is a comment'
+    assert res[1]['Contents'] == 'Type: comments\nCreated By: admin\nCreated On: 2020-08-17 06:31:49\nThis is a comment'
     assert len(res) == 2
 
 
@@ -884,7 +1526,7 @@ def test_update_remote_data_sc_task_sc_req_item(mocker, ticket_type):
                     password='password', verify=False, fetch_time='fetch_time',
                     sysparm_query='sysparm_query', sysparm_limit=10, timestamp_field='opened_at',
                     ticket_type=ticket_type, get_attachments=False, incident_name='description')
-    params = {'ticket_type': ticket_type, 'close_ticket': True}
+    params = {'ticket_type': ticket_type, 'close_ticket_multiple_options': 'None', 'close_ticket': True}
     args = {'remoteId': '1234', 'data': TICKET_FIELDS, 'entries': [], 'incidentChanged': True, 'delta': {},
             'status': 2}
     mocker.patch('ServiceNowv2.get_ticket_fields', side_effect=ticket_fields)
@@ -892,30 +1534,9 @@ def test_update_remote_data_sc_task_sc_req_item(mocker, ticket_type):
     update_remote_system_command(client, args, params)
 
 
-@pytest.mark.parametrize('query, expected', [
-    ("id=5&status=pi", ["id=5", "status=pi"]),
-    ("id=5&status=pi&name=bobby", ["id=5", "status=pi", "name=bobby"]),
-    ("&status=pi", ["status=pi"]),
-    ("status=pi&", ["status=pi"]),
-])
-def test_build_query_for_request_params(query, expected):
-    """
-    Given:
-     - Query with multiple arguments
-
-    When:
-     - Running Cilent.query function
-
-    Then:
-     - Verify the query was split to a list of sub queries according to the &.
-    """
-    sub_queries = build_query_for_request_params(query)
-    assert sub_queries == expected
-
-
 @pytest.mark.parametrize('command, args', [
-    (query_tickets_command, {'limit': "50", 'query': "assigned_to=123&active=true", 'ticket_type': "sc_task"}),
-    (query_table_command, {'limit': "50", 'query': "assigned_to=123&active=true", 'table_name': "sc_task"})
+    (query_tickets_command, {'limit': "50", 'query': "assigned_to=123^active=true", 'ticket_type': "sc_task"}),
+    (query_table_command, {'limit': "50", 'query': "assigned_to=123^active=true", 'table_name': "sc_task"})
 ])
 def test_multiple_query_params(requests_mock, command, args):
     """
@@ -927,14 +1548,14 @@ def test_multiple_query_params(requests_mock, command, args):
      - Using servicenow-query-table command with multiple sysparm_query arguments.
 
     Then:
-     - Verify the right request is called with '&' distinguishing different arguments.
+     - Verify the right request is called with '^' distinguishing different arguments.
     """
     url = 'https://test.service-now.com/api/now/v2/'
     client = Client(url, 'sc_server_url', 'cr_server_url', 'username', 'password',
                     'verify', 'fetch_time', 'sysparm_query', 'sysparm_limit', 'timestamp_field',
                     'ticket_type', 'get_attachments', 'incident_name')
     requests_mock.request('GET', f'{url}table/sc_task?sysparm_limit=50&sysparm_offset=0&'
-                                 'sysparm_query=assigned_to%3D123&sysparm_query=active%3Dtrue',
+                                 'sysparm_query=assigned_to%3D123^active%3Dtrue',
                           json=RESPONSE_TICKET_ASSIGNED)
     human_readable, entry_context, result, bol = command(client, args)
 
@@ -1025,6 +1646,25 @@ def test_clear_fields_in_get_ticket_fields(args, expected_ticket_fields):
         assert res == expected_ticket_fields
 
 
+def test_clear_fields_for_update_remote_system():
+    """
+    Given:
+        - The fields from the parsed_args.data (from update_remote_system)
+    When:
+        - Run get_ticket_fields
+    Then:
+        - Validate that the ampty fields exists in the fields that returns.
+    """
+    parsed_args_data = {'assigned_to': '', 'category': 'Software', 'description': '', 'impact': '3 - Low',
+                        'notify': '1 - Do Not Notify', 'priority': '5 - Planning', 'severity': '1 - High - Low',
+                        'short_description': 'Testing 3', 'sla_due': '0001-01-01T02:22:42+02:20',
+                        'state': '2 - In Progress', 'subcategory': '', 'urgency': '3 - Low',
+                        'work_start': '0001-01-01T02:22:42+02:20'}
+
+    res = get_ticket_fields(parsed_args_data)
+    assert 'assigned_to' in res
+
+
 def test_query_table_with_fields(mocker):
     """
     Given:
@@ -1104,8 +1744,7 @@ def test_get_tasks_for_co_command(mocker):
         - Validate the output is correct.
     """
     client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password', 'verify', 'fetch_time',
-                    'sysparm_query', 'sysparm_limit', 'timestamp_field', 'ticket_type', 'get_attachments',
-                    'incident_name')
+                    'sysparm_query', 'sysparm_limit', 'timestamp_field', 'problem', 'get_attachments', 'incident_name')
 
     args = {"id": "a9e9c33dc61122760072455df62663d2"}
     mocker.patch.object(client,
@@ -1117,3 +1756,261 @@ def test_get_tasks_for_co_command(mocker):
         'ServiceNow.Tasks(val.ID===obj.ID)': CREATED_TICKET_CONTEXT_GET_TASKS_FOR_CO_COMMAND
     }
     assert result.raw_response == util_load_json('test_data/get_tasks_for_co_command.json')
+
+
+def test_get_ticket_attachment_entries_with_oauth_token(mocker):
+    """
+    The purpose of this test is to verify that it is possible to get a file attachment of a ServiceNow ticket by using
+    an OAuth 2.0 client.
+
+    Given:
+        - A client with 'oauth_params' - i.e a client that is configured with an OAuth 2.0 Authorization.
+        - Mock responses for 'get_ticket_attachments', 'get_access_token' and 'requests.get' functions.
+
+    When:
+        - Running the 'client.get_ticket_attachment_entries' function.
+
+    Then:
+        - Verify that the 'requests.get' function's arguments are arguments of a call with OAuth 2.0 Authorization.
+    """
+    # Preparations and mocking:
+    client = Client("url", 'sc_server_url', 'cr_server_url', 'username', 'password', 'verify', 'fetch_time',
+                    'sysparm_query', 'sysparm_limit', 'timestamp_field', 'ticket_type', 'get_attachments',
+                    'incident_name', oauth_params={'oauth_params': ''})
+
+    mock_res_for_get_ticket_attachments = \
+        {'result': [
+            {
+                'file_name': 'attachment for test.txt',
+                'download_link': 'https://ven03941.service-now.com/api/now/attachment/12b7ea411b15cd10042611b4bd4/file'
+            }]}
+
+    mock_res_for_get_access_token = 'access_token'
+
+    mocker.patch.object(client, 'get_ticket_attachments', return_value=mock_res_for_get_ticket_attachments)
+    mocker.patch.object(client.snow_client, 'get_access_token', return_value=mock_res_for_get_access_token)
+    requests_get_mocker = mocker.patch('requests.get', return_value=None)
+
+    # Running get_ticket_attachment_entries function:
+    client.get_ticket_attachment_entries(ticket_id='id')
+
+    # Validate Results are as expected:
+    assert requests_get_mocker.call_args.kwargs.get('auth') is None, \
+        "When An OAuth 2.0 client is configured the 'auth' argument shouldn't be passed to 'requests.get' function"
+    assert requests_get_mocker.call_args.kwargs.get('headers').get('Authorization') == \
+        f"Bearer {mock_res_for_get_access_token}", "When An OAuth 2.0 client is configured the 'Authorization'" \
+        " Header argument should be passed to 'requests.get' function"
+
+
+@pytest.mark.parametrize(
+    'command, args, response',
+    [
+        (generic_api_call_command,
+         {"method": "GET",
+          "path": "table/sn_si_incident?sysparam_limit=1&sysparam_query=active=true^ORDERBYDESCnumber",
+          "body": {},
+          "headers": {},
+          },
+         RESPONSE_GENERIC_TICKET)
+    ])
+def test_generic_api_call_command(command, args, response, mocker):
+    """test case for `generic_api_call_command`"""
+
+    client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
+                    'verify', 'fetch_time', 'sysparm_query', 'sysparm_limit', 'timestamp_field',
+                    'ticket_type', 'get_attachments', 'incident_name')
+
+    mocker.patch.object(client, 'send_request', return_value=response)
+    result = command(client, args)
+    assert result.outputs == response
+
+
+@pytest.mark.parametrize('file_type , expected',
+                         [(EntryType.FILE, True),
+                          (3, True),
+                          (EntryType.IMAGE, True),
+                          (EntryType.NOTE, False),
+                          (15, False)])
+def test_is_entry_type_mirror_supported(file_type, expected):
+    """
+    Given:
+        - an entry file type
+    When:
+        - running the update_remote_system_command checking if the entry supports mirroring
+    Then:
+        - return True if the file entry type supports mirroring else return False
+    """
+    assert ServiceNowv2.is_entry_type_mirror_supported(file_type) == expected
+
+
+@pytest.mark.parametrize('params, expected',
+                         [({'close_ticket_multiple_options': 'None', 'close_ticket': True}, 'closed'),
+                          ({'close_ticket_multiple_options': 'None', 'close_ticket': False}, None),
+                          ({'close_ticket_multiple_options': 'resolved', 'close_ticket': True}, 'resolved'),
+                          ({'close_ticket_multiple_options': 'resolved', 'close_ticket': False}, 'resolved'),
+                          ({'close_ticket_multiple_options': 'closed', 'close_ticket': True}, 'closed'),
+                          ({'close_ticket_multiple_options': 'closed', 'close_ticket': False}, 'closed')])
+def test_get_closure_case(params, expected):
+    """
+    Given:
+        - params dict with both old and new close_ticket integration params.
+        - case 1: params dict with none configured new param and old param configured to True.
+        - case 2: params dict with none configured new param and old param configured to False.
+        - case 3: params dict with resolved configured new param and old param configured to True.
+        - case 4: params dict with resolved configured new param and old param configured to False.
+        - case 5: params dict with closed configured new param and old param configured to True.
+        - case 6: params dict with closed configured new param and old param configured to False.
+    When:
+        - running get_closure_case method.
+    Then:
+        - Ensure the right closure method was returned.
+        - case 1: Should return 'closed'
+        - case 2: Should return None
+        - case 3: Should return 'resolved'
+        - case 4: Should return 'resolved'
+        - case 5: Should return 'closed'
+        - case 6: Should return 'closed'
+    """
+    assert get_closure_case(params) == expected
+
+
+@pytest.mark.parametrize('ticket_state, server_close_custom_state, expected_res',
+                         [('1', '', 'Other'),
+                          ('7', '', 'Resolved'),
+                          ('6', '', 'Resolved'),
+                          ('10', '10=Test', 'Test'),
+                          ('10', '10=Test,11=Test2', 'Test'),
+                          ('6', '6=Test', 'Test'),  # If builtin state was override by custom state.
+                          ('corrupt_state', '', 'Other'),
+                          ('corrupt_state', 'custom_state=Test', 'Other'),
+                          ('6', 'custom_state=Test', 'Resolved'),
+                          ])
+def test_converts_state_close_reason(ticket_state, server_close_custom_state, expected_res):
+    """
+    Given:
+        - ticket_state: The state for the closed service now ticket
+        - server_close_custom_state: The custom state for the closed service now ticket
+    When:
+        - closing a ticket on service now
+    Then:
+        - return the matching XSOAR incident state.
+    """
+    assert converts_state_close_reason(ticket_state, server_close_custom_state) == expected_res
+
+
+def ticket_fields_mocker(*args, **kwargs):
+    state = '88' if kwargs.get('ticket_type') == 'incident' else '90'
+    fields = {'close_notes': 'This is closed', 'closed_at': '2020-10-29T13:19:07.345995+02:00', 'impact': '3',
+              'priority': '4', 'resolved_at': '2020-10-29T13:19:07.345995+02:00', 'severity': '1 - Low',
+              'short_description': 'Post parcel', 'sla_due': '0001-01-01T00:00:00Z', 'urgency': '3', 'state': state,
+              'work_start': '0001-01-01T00:00:00Z'}
+    assert fields == args[0]
+    return fields
+
+
+@pytest.mark.parametrize('file_name , expected',
+                         [('123.png', 'image/png'),
+                          ('123.gif', 'image/gif'),
+                          ('123.jpeg', 'image/jpeg'),
+                          ('123.pdf', 'application/pdf'),
+                          ('123', '*/*')])
+def test_upload_file_types(file_name, expected):
+    client = Client(server_url='https://server_url.com/', sc_server_url='sc_server_url',
+                    cr_server_url='cr_server_url', username='username',
+                    password='password', verify=False, fetch_time='fetch_time',
+                    sysparm_query='sysparm_query', sysparm_limit=10, timestamp_field='opened_at',
+                    get_attachments=False, incident_name='description', ticket_type='incident')
+    assert client.get_content_type(file_name) == expected
+
+
+@pytest.mark.parametrize('ticket_type, ticket_state, close_custom_state, result_close_state, update_call_count',
+                         [
+                             # case 1 - SIR ticket closed by custom state
+                             ('sn_si_incident', '16', '90', '90', 1),
+                             # case 2 - custom state doesn't exist, closed by default state code - '3'
+                             ('sn_si_incident', '16', '90', '3', 2),
+                             # case 3 - ticket closed by custom state
+                             ('incident', '1', '88', '88', 1),
+                             # case 4 - custom state doesn't exist, closed by default state code - '7'
+                             ('incident', '1', '88', '7', 2),
+                         ], ids=['case - 1', 'case - 2', 'case - 3', 'case - 4'])
+def test_update_remote_data_custom_state(mocker, ticket_type, ticket_state, close_custom_state, result_close_state,
+                                         update_call_count):
+    """
+    Given:
+    -  ServiceNow client
+    -  ServiceNow ticket of type sn_si_incident
+    -  ServiceNow ticket of type incident
+    -  close_custom_state exist/not exist in ServiceNow
+    When
+        - running update_remote_system_command.
+    Then
+        - The state is changed accordingly
+    """
+    client = Client(server_url='https://server_url.com/', sc_server_url='sc_server_url',
+                    cr_server_url='cr_server_url', username='username',
+                    password='password', verify=False, fetch_time='fetch_time',
+                    sysparm_query='sysparm_query', sysparm_limit=10, timestamp_field='opened_at',
+                    ticket_type=ticket_type, get_attachments=False, incident_name='description')
+    params = {'ticket_type': ticket_type, 'close_ticket_multiple_options': 'None', 'close_ticket': True,
+              'close_custom_state': close_custom_state}
+
+    TICKET_FIELDS['state'] = ticket_state
+    args = {'remoteId': '1234', 'data': TICKET_FIELDS, 'entries': [], 'incidentChanged': True, 'delta': {},
+            'status': 2}
+
+    def update_ticket_mocker(*args):
+        # Represents only the response of the last call to client.update
+        # In case the custom state doesn't exist -
+        # in the first call will return the ticket's state as before (in case2 - '16', case4 - '1')
+        return {'result': {'short_description': 'Post parcel', 'close_notes': 'This is closed',
+                           'closed_at': '2020-10-29T13:19:07.345995+02:00', 'impact': '3', 'priority': '4',
+                           'resolved_at': '2020-10-29T13:19:07.345995+02:00', 'severity': '1 - High - Low',
+                           'sla_due': '0001-01-01T00:00:00Z', 'state': result_close_state, 'urgency': '3',
+                           'work_start': '0001-01-01T00:00:00Z'}}
+
+    mocker.patch('ServiceNowv2.get_ticket_fields', side_effect=ticket_fields_mocker)
+    mocker_update = mocker.patch.object(client, 'update', side_effect=update_ticket_mocker)
+    update_remote_system_command(client, args, params)
+    # assert the state argument in the last call to client.update
+    assert mocker_update.call_args[0][2]['state'] == result_close_state
+    assert mocker_update.call_count == update_call_count
+
+
+@pytest.mark.parametrize('mock_json, expected_results',
+                         [
+                             ({'error': 'invalid client.'}, 'ServiceNow Error: invalid client.'),
+                             ({'error': {'message': 'invalid client', 'detail': 'the client you have entered is invalid.'}},
+                              'ServiceNow Error: invalid client, details: the client you have entered is invalid.')
+                         ])
+def test_send_request_with_str_error_response(mocker, mock_json, expected_results):
+    """
+    Given:
+     - a client and a mock response.
+     - case 1: a mock response where the error field is a string.
+     - case 2: a mock response where the error field is a dict.
+
+    When:
+     - Running send_request function.
+
+    Then:
+     - Verify that the function extracted the data from the response without problems and the expected exception is raised.
+     - case 1: Shouldn't attempt to extract inner fields from the error field, only present the error value.
+     - case 2: Should attempt to extract inner fields from the error field, present the parsed extracted error values.
+    """
+    client = Client('server_url', 'sc_server_url', 'cr_server_url', 'username', 'password',
+                    'verify', 'fetch_time', 'sysparm_query', 'sysparm_limit', 'timestamp_field',
+                    'ticket_type', 'get_attachments', 'incident_name', display_date_format='yyyy-MM-dd')
+
+    class MockResponse:
+        def __init__(self, mock_json):
+            self.text = 'some text'
+            self.json_data = mock_json
+            self.status_code = 400
+
+        def json(self):
+            return self.json_data
+    mocker.patch.object(requests, 'request', return_value=MockResponse(mock_json))
+    with pytest.raises(Exception) as e:
+        client.send_request(path='table')
+    assert str(e.value) == expected_results

@@ -33,7 +33,6 @@ comment: Collects all results from previous tasks. (Available from Cortex XSOAR 
 commonfields:
   id: TroubleshootAggregateResults
   version: -1
-enabled: false
 name: TroubleshootAggregateResults
 outputs:
 - contextPath: TroubleshootAggregateResults.configuration_file_name
@@ -49,8 +48,7 @@ tags:
 - troubleshoot
 timeout: '0'
 type: python
-dockerimage: demisto/python3:3.9.7.24076
+dockerimage: demisto/python3:3.10.5.31797
 fromversion: 5.0.0
 tests:
 - No tests (auto formatted)
-

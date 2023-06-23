@@ -5,14 +5,14 @@ from CommonServerPython import *  # noqa: F401
 from typing import Dict, Set
 
 
-import requests
+import urllib3
 
 # Imports
 
 from enum import Enum
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 headers: Dict[str, str] = {}
 DATE_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
@@ -240,7 +240,7 @@ def main():
 
     # Log exceptions
     except Exception as e:
-        demisto.log(str(e))
+        demisto.debug(str(e))
         return_error(f'Failed to execute {demisto.command()} command. Error: {str(e)}')
 
 

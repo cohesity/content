@@ -1,8 +1,11 @@
-from CommonServerPython import *
+import urllib3
+import demistomock as demisto  # noqa: F401
+from CommonServerPython import *  # noqa: F401
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 # IMPORTS
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()
+urllib3.disable_warnings()
 
 # CONSTANTS
 DATE_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
@@ -40,6 +43,10 @@ PROFILE_ARGS = [
     'managerId',
     'manager'
 ]
+GROUP_PROFILE_ARGS = [
+    'name',
+    'description'
+]
 
 
 class Client(BaseClient):
@@ -53,6 +60,19 @@ class Client(BaseClient):
         uri = 'groups'
         query_params = {
             'q': encode_string_results(group_name)
+        }
+        res = self._http_request(
+            method="GET",
+            url_suffix=uri,
+            params=query_params
+        )
+        if res and len(res) == 1:
+            return res[0].get('id')
+
+    def get_app_id(self, app_name):
+        uri = 'apps'
+        query_params = {
+            'q': encode_string_results(app_name)
         }
         res = self._http_request(
             method="GET",
@@ -145,6 +165,14 @@ class Client(BaseClient):
             json_data=body
         )
 
+    def set_temp_password(self, user_id):
+        uri = f'users/{user_id}/lifecycle/expire_password'
+
+        return self._http_request(
+            method="POST",
+            url_suffix=uri,
+        )
+
     def add_user_to_group(self, user_id, group_id):
         uri = f'groups/{group_id}/users/{user_id}'
         return self._http_request(
@@ -189,6 +217,9 @@ class Client(BaseClient):
     @staticmethod
     def get_readable_logs(raw_logs):
         logs = []
+        browser = ""
+        device = ""
+        os = ""
         raw_logs = raw_logs if isinstance(raw_logs, list) else [raw_logs]
         for log in raw_logs:
             if log.get('client', {}).get('userAgent'):
@@ -199,8 +230,8 @@ class Client(BaseClient):
                 if (not os) or os.lower() == 'unknown':
                     os = 'Unknown OS'
                 device = log.get('client', {}).get('device')
-            if (not device) or device.lower() == 'unknown':
-                device = 'Unknown device'
+                if (not device) or device.lower() == 'unknown':
+                    device = 'Unknown device'
             targets = ''
             if log.get('target'):
                 for target in log.get('target'):
@@ -214,7 +245,7 @@ class Client(BaseClient):
                 'EventOutcome': log.get('outcome', {}).get('result') + (
                     f": {log.get('outcome', {}).get('reason')}" if log.get('outcome', {}).get('reason') else ''),
                 'EventSeverity': log.get('severity'),
-                'Client': f"{browser} on {os} {device}",
+                'Client': f"{browser} on {os} {device}" if browser else "Unknown client",
                 'RequestIP': log.get('client', {}).get('ipAddress'),
                 'ChainIP': [ip_chain.get('ip') for ip_chain in log.get('request', {}).get('ipChain', [])],
                 'Targets': targets or '-',
@@ -295,12 +326,39 @@ class Client(BaseClient):
                 'Created': user.get('created'),
                 'Activated': user.get('activated'),
                 'StatusChanged': user.get('statusChanged'),
-                'PasswordChanged': user.get('passwordChanged')
+                'PasswordChanged': user.get('passwordChanged'),
+                'Manager': user.get('profile', {}).get('manager'),
+                'ManagerEmail': user.get('profile', {}).get('managerEmail')
             }
             if user.get('group'):
                 user['Group'] = user.get('group')
             users.append(user)
         return users
+
+    @staticmethod
+    def get_apps_context(raw_apps):
+        apps = []
+        raw_apps = raw_apps if isinstance(raw_apps, list) else [raw_apps]
+        for app in raw_apps:
+            app = {
+                'ID': app.get('id'),
+            }
+            apps.append(app)
+        return apps
+
+    @staticmethod
+    def get_groups_context(raw_groups):
+        groups = []
+        raw_groups = raw_groups if isinstance(raw_groups, list) else [raw_groups]
+        for group in raw_groups:
+            group = {
+                'ID': group.get('id'),
+                'Name': group.get('profile', {}).get('name'),
+                'Description': group.get('profile', {}).get('description'),
+                'Type': group.get('type')
+            }
+            groups.append(group)
+        return groups
 
     @staticmethod
     def get_readable_users(raw_users, verbose='false'):
@@ -315,6 +373,8 @@ class Client(BaseClient):
                     'Login': user.get('profile', {}).get('login'),
                     'Email': user.get('profile', {}).get('email'),
                     'Second Email': user.get('profile', {}).get('secondEmail'),
+                    'Manager': user.get('profile', {}).get('manager'),
+                    'Manager Email': user.get('profile', {}).get('managerEmail')
                 }
                 additionalData = {
                     'ID': user.get('id'),
@@ -345,7 +405,9 @@ class Client(BaseClient):
                     'Last Name': user.get('profile').get('lastName'),
                     'Mobile Phone': user.get('profile').get('mobilePhone'),
                     'Last Login': user.get('lastLogin'),
-                    'Status': user.get('status')
+                    'Status': user.get('status'),
+                    'Manager': user.get('profile', {}).get('manager'),
+                    'Manager Email': user.get('profile', {}).get('managerEmail')
                 }
                 users.append(user)
             return users
@@ -375,12 +437,33 @@ class Client(BaseClient):
             params=query_params
         )
 
+    def create_group(self, profile):
+        body = {
+            'profile': profile,
+        }
+        uri = 'groups'
+        return self._http_request(
+            method='POST',
+            url_suffix=uri,
+            json_data=body
+        )
+
     # Build profile dict with pre-defined keys (for user)
     @staticmethod
     def build_profile(args):
         profile = {}
         keys = args.keys()
         for key in PROFILE_ARGS:
+            if key in keys:
+                profile[key] = args[key]
+        return profile
+
+    # Build profile dict with pre-defined keys (for group)
+    @staticmethod
+    def build_group_profile(args):
+        profile = {}
+        keys = args.keys()
+        for key in GROUP_PROFILE_ARGS:
             if key in keys:
                 profile[key] = args[key]
         return profile
@@ -457,13 +540,33 @@ class Client(BaseClient):
             if key == 'query':
                 key = 'q'
             query_params[key] = encode_string_results(value)
-        if args.get('limit'):
-            return self._http_request(
-                method='GET',
-                url_suffix=uri,
-                params=query_params
-            )
-        return self.get_paged_results(uri, query_params)
+        limit = int(args.get('limit'))
+        response = self._http_request(
+            method="GET",
+            url_suffix=uri,
+            resp_type='response',
+            params=query_params
+        )
+        paged_results = response.json()
+        if limit > 200:
+            query_params = {}
+            limit -= 200
+            while limit > 0 and "next" in response.links and len(response.json()) > 0:
+                query_params['limit'] = encode_string_results(str(limit))
+                next_page = delete_limit_param(response.links.get("next").get("url"))
+                response = self._http_request(
+                    method="GET",
+                    full_url=next_page,
+                    url_suffix='',
+                    resp_type='response',
+                    params=query_params
+                )
+                paged_results += response.json()
+                limit -= 200
+        after = None
+        if "next" in response.links and len(response.json()) > 0:
+            after = get_after_tag(response.links.get("next").get("url"))
+        return (paged_results, after)
 
     def list_groups(self, args):
         # Base url - if none of the the above specified - returns all the groups (default 200 items)
@@ -519,11 +622,23 @@ class Client(BaseClient):
             url_suffix=uri
         )
 
-    def list_zones(self):
+    def list_zones(self, limit):
+        uri = 'zones'
+        if limit:
+            query_params = {'limit': encode_string_results(limit)}
+            return self._http_request(
+                method='GET',
+                url_suffix=uri,
+                params=query_params
+            )
+        return self.get_paged_results(uri)
+
+    def create_zone(self, zoneObject):
         uri = 'zones'
         return self._http_request(
-            method='GET',
-            url_suffix=uri
+            method='POST',
+            url_suffix=uri,
+            json_data=zoneObject
         )
 
     def update_zone(self, zoneObject):
@@ -534,6 +649,14 @@ class Client(BaseClient):
             method='PUT',
             url_suffix=uri,
             data=json.dumps(zoneObject)
+        )
+
+    def assign_group_to_app(self, group_id, app_id):
+        uri = f'apps/{app_id}/groups/{group_id}'
+        return self._http_request(
+            method="PUT",
+            url_suffix=uri,
+            resp_type='text'
         )
 
 
@@ -670,6 +793,10 @@ def set_password_command(client, args):
 
     raw_response = client.set_password(user_id, password)
     readable_output = f"{args.get('username')} password was last changed on {raw_response.get('passwordChanged')}"
+
+    if argToBoolean(args.get('temporary_password', False)):
+        client.set_temp_password(user_id)
+
     return (
         readable_output,
         {},
@@ -866,19 +993,21 @@ def get_group_members_command(client, args):
 
 
 def list_users_command(client, args):
-    raw_response = client.list_users(args)
+    raw_response, after_tag = client.list_users(args)
     verbose = args.get('verbose')
     users = client.get_readable_users(raw_response, verbose)
     user_context = client.get_users_context(raw_response)
     context = createContext(user_context, removeNull=True)
-    outputs = {
-        'Account(val.ID && val.ID == obj.ID)': context
-    }
     if verbose == 'true':
         readable_output = f"### Okta users found:\n {users}"
     else:
         readable_output = f"### Okta users found:\n {tableToMarkdown('Users', users)} "
-
+    if after_tag:
+        readable_output += f"\n### tag: {after_tag}"
+    outputs = {
+        'Account(val.ID && val.ID == obj.ID)': context,
+        'Okta.User(val.tag)': {'tag': after_tag}
+    }
     return(
         readable_output,
         outputs,
@@ -1030,7 +1159,7 @@ def get_zone_command(client, args):
 
 
 def list_zones_command(client, args):
-    raw_response = client.list_zones()
+    raw_response = client.list_zones(args.get('limit'))
     if not raw_response:
         return 'No zones found.', {}, raw_response
     readable_output = tableToMarkdown('Okta Zones', raw_response, headers=[
@@ -1060,6 +1189,37 @@ def apply_zone_updates(zoneObject, zoneName, gatewayIPs, proxyIPs):
         zoneObject["proxies"] = [{"type": "CIDR", "value": cidr} for cidr in CIDRs]
 
     return zoneObject
+
+
+def create_zone_command(client, args):
+    zone_name = args.get('name')
+    gateway_ips = argToList(args.get('gateway_ips'))
+    proxies = argToList(args.get('proxies'))
+    if not (gateway_ips or proxies):
+        raise Exception("You must supply either 'gateway_ips' or 'proxies'.")
+
+    zoneObject = {
+        "name": '',
+        "type": "IP",
+        "status": "ACTIVE",
+        "gateways": [],
+        "proxies": []
+    }
+    zoneObject = apply_zone_updates(zoneObject, zone_name, gateway_ips, proxies)
+
+    raw_response = client.create_zone(zoneObject)
+    if not raw_response:
+        return 'Zone not created.', {}, raw_response
+    readable_output = tableToMarkdown('Okta Zones', raw_response, headers=[
+        'name', 'id', 'gateways', 'status', 'system', 'lastUpdated', 'created'])
+    outputs = {
+        'Okta.Zone(val.id && val.id === obj.id)': createContext(raw_response)
+    }
+    return (
+        readable_output,
+        outputs,
+        raw_response
+    )
 
 
 def update_zone_command(client, args):
@@ -1096,13 +1256,79 @@ def update_zone_command(client, args):
         return 'No zone found in Okta with this ID.', {}, {}
 
 
+def assign_group_to_app_command(client, args):
+
+    group_id = args.get('groupId')
+    if not group_id:
+        group_id = client.get_group_id(args.get('groupName'))
+        if group_id is None:
+            raise ValueError('Either group name not found or multiple groups include this name.')
+    app_id = client.get_app_id(args.get('appName'))
+    raw_response = client.assign_group_to_app(group_id, app_id)
+    readable_output = f"Group: {args.get('groupName')} added to PA App successfully"
+    return (
+        readable_output,
+        {},
+        raw_response
+    )
+
+
+def create_group_command(client, args):
+
+    profile = client.build_group_profile(args)
+    raw_response = client.create_group(profile)
+    group_context = client.get_groups_context(raw_response)
+    outputs = {
+        'OktaGroup(val.ID && val.ID === obj.ID)': createContext(group_context)
+    }
+    readable_output = f"Group Created: [GroupID:{raw_response['id']}, GroupName: {raw_response['profile']['name']}]"
+    return (
+        readable_output,
+        outputs,
+        raw_response
+    )
+
+
+def get_after_tag(url):
+    """retrieve the after param from the url
+
+    Args:
+        url: some url
+
+    Returns:
+        String: the value of the 'after' query param.
+    """
+    parsed_url = urlparse(url)
+    captured_value = parse_qs(parsed_url.query)['after'][0]
+    return captured_value
+
+
+def delete_limit_param(url):
+    """Delete the limit param from the url
+
+    Args:
+        url: some url
+
+    Returns:
+        String: the url with the limit query param.
+    """
+    parsed_url = urlparse(url)
+    query_dict = parse_qs(parsed_url.query)
+    query_dict.pop('limit')
+    return urlunparse(parsed_url._replace(query=urlencode(query_dict, True)))
+
+
 def main():
     """
         PARSE AND VALIDATE INTEGRATION PARAMS
     """
     # get the service API url
     base_url = urljoin(demisto.params()['url'].strip('/'), '/api/v1/')
-    apitoken = demisto.params().get('apitoken')
+    apitoken = demisto.params().get("credentials", {}).get("password", '') or demisto.params().get('apitoken', '')
+
+    if not apitoken:
+        raise ValueError('Missing API token.')
+
     verify_certificate = not demisto.params().get('insecure', False)
     proxy = demisto.params().get('proxy', False)
 
@@ -1138,7 +1364,10 @@ def main():
         'okta-clear-user-sessions': clear_user_sessions_command,
         'okta-list-zones': list_zones_command,
         'okta-get-zone': get_zone_command,
-        'okta-update-zone': update_zone_command
+        'okta-update-zone': update_zone_command,
+        'okta-create-zone': create_zone_command,
+        'okta-create-group': create_group_command,
+        'okta-assign-group-to-app': assign_group_to_app_command
 
     }
 

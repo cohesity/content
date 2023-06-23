@@ -1,7 +1,8 @@
-category: Authentication
+category: Authentication & Identity Management
 commonfields:
   id: ThycoticDSV
   version: -1
+deprecated: true
 configuration:
 - display: Server URL (e.g. https://example.com)
   name: url
@@ -16,18 +17,15 @@ configuration:
   required: false
   type: 8
 - display: Client ID
-  hidden: false
   name: client_id
   required: true
   type: 0
 - display: Client Secret
-  hidden: false
   name: client_secret
   required: true
   type: 0
-description: Manage credentials for applications, databases, CI/CD tools, and services
-  without causing friction in the development process.
-display: ThycoticDSV
+description: Deprecated. Use DelineaDSV instead.
+display: ThycoticDSV (Deprecated)
 name: ThycoticDSV
 script:
   commands:

@@ -17,7 +17,7 @@ import tldextract
 import pytz
 
 
-no_fetch_extract = tldextract.TLDExtract(suffix_list_urls=None)
+no_fetch_extract = tldextract.TLDExtract(suffix_list_urls=None, cache_dir=False)
 utc = pytz.UTC
 
 SELF_IN_CONTEXT = False
@@ -36,6 +36,9 @@ RECIPIENTS_COLUMNS = [EMAIL_TO_FIELD, EMAIL_CC_FIELD, EMAIL_BCC_FIELD]
 MIN_CAMPAIGN_SIZE = int(demisto.args().get("minIncidentsForCampaign", 3))
 MIN_UNIQUE_RECIPIENTS = int(demisto.args().get("minUniqueRecipients", 2))
 DUPLICATE_SENTENCE_THRESHOLD = 0.95
+TO_PLOT_CANVAS = demisto.args().get("plotCanvas", 'false') == 'true'
+MAX_INCIDENTS_FOR_CANVAS_PLOTTING = 6
+MAX_INDICATORS_FOR_CANVAS_PLOTTING = 10
 KEYWORDS = ['#1', '100%', 'access', 'accordance', 'account', 'act', 'action', 'activate', 'ad', 'affordable', 'amazed',
             'amazing', 'apply', 'asap', 'asked', 'attach', 'attached', 'attachment', 'attachments', 'attention',
             'authorize', 'authorizing', 'avoid', 'bank', 'bargain', 'billing', 'bonus', 'boss', 'bucks', 'bulk', 'buy',
@@ -317,7 +320,7 @@ def summarize_email_body(body, subject, nb_sentences=3, subject_weight=1.5, keyw
     cv = CountVectorizer(stop_words=list(stopwords.words('english')))
     body_arr = cv.fit_transform(corpus).toarray()
     subject_arr = cv.transform(sent_tokenize(subject)).toarray()
-    word_list = cv.get_feature_names()
+    word_list = cv.get_feature_names_out()
     count_list = body_arr.sum(axis=0) + subject_arr.sum(axis=0) * subject_weight
     duplicate_sentences = [i for i, arr in enumerate(body_arr) if
                            any(cosine_sim(arr, arr2) > DUPLICATE_SENTENCE_THRESHOLD
@@ -521,11 +524,13 @@ def draw_canvas(incidents, indicators):
 
 
 def analyze_incidents_campaign(incidents, fields_to_display):
+    global TO_PLOT_CANVAS, MAX_INCIDENTS_FOR_CANVAS_PLOTTING, MAX_INDICATORS_FOR_CANVAS_PLOTTING
     incidents_df = pd.DataFrame(incidents)
     return_campaign_details_entry(incidents_df, fields_to_display)
     indicators_df = return_indicator_entry(incidents_df)
     return_involved_incidents_entry(incidents_df, indicators_df, fields_to_display)
-    draw_canvas(incidents, indicators_df.to_dict(orient='records'))
+    if TO_PLOT_CANVAS and len(incidents_df) <= MAX_INCIDENTS_FOR_CANVAS_PLOTTING:
+        draw_canvas(incidents, indicators_df.head(MAX_INDICATORS_FOR_CANVAS_PLOTTING).to_dict(orient='records'))
 
 
 def main():

@@ -420,13 +420,17 @@ def search_assets(client: Client, args: dict) -> Tuple[str, Dict[str, Any], List
     limit: int = int(args.get('limit', 500))
     to_context = args.get('to_context')
     context: Dict[str, Any] = {}
+    hostnames = args.get('hostname')
     if args.get('tags'):
         tags = argToList(args.get('tags'))
     else:
         tags = args.get('tags')
+
+    hostnames_query = f'hostname:({hostnames.replace(",", " ")})' if hostnames else hostnames
+
     params = {
         'id[]': argToList(args.get('id')),
-        'hostname[]': argToList(args.get('hostname')),
+        'q': hostnames_query,
         'min_risk_meter_score': args.get('min-score'),
         'tags[]': tags
     }
@@ -555,7 +559,9 @@ def delete_tags(client: Client, args: dict) -> Tuple[str, Dict[str, Any], List[D
 
 def main():
     params = demisto.params()
-    api = params.get('key')
+    api = params.get('credentials_key', {}).get('password') or params.get('key')
+    if not api:
+        raise DemistoException('Kenna API key must be provided.')
     # Service base URL
     base_url = params.get('url')
     # Should we use SSL

@@ -3,12 +3,12 @@ from json.decoder import JSONDecodeError
 import demistomock as demisto
 from CommonServerPython import *  # noqa # pylint: disable=unused-wildcard-import
 
-import requests
+import urllib3
 import traceback
 from typing import Dict
 
 # Disable insecure warnings
-requests.packages.urllib3.disable_warnings()  # pylint: disable=no-member
+urllib3.disable_warnings()  # pylint: disable=no-member
 
 
 ''' CONSTANTS '''
@@ -104,6 +104,7 @@ def date_string_to_iso_format_parsing(date_str):
     :rtype: ``str``
     """
     parsed_date_format = dateparser.parse(date_str, date_formats=[SOCRADAR_DATE_FORMAT], settings={'TIMEZONE': 'UTC'})
+    assert parsed_date_format is not None, f'could not parse {date_str}'
     return parsed_date_format.strftime(DATE_FORMAT)
 
 

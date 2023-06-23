@@ -31,7 +31,6 @@ configuration:
   required: false
   type: 8
 - display: Trust any certificate (not secure)
-  hidden: false
   name: insecure
   required: false
   type: 8
@@ -186,12 +185,6 @@ script:
     - contextPath: Maltiverse.Domain.TLD
       description: Top-level domain of the hostname.
       type: String
-    - contextPath: Maltiverse.Domain.ResolvedIP.IP
-      description: Stores an IP that was resolved by the domain.
-      type: String
-    - contextPath: Maltiverse.Domain.ResolvedIP.Timestamp
-      description: Stores a timestamp when an IP address has been resolved by the domain.
-      type: Date
     - contextPath: Domain.ThreatTypes
       description: A list with the description of the elements in the block list.
       type: Unknown
@@ -395,7 +388,7 @@ script:
     - contextPath: File.Tags
       description: Attribute to label an IoC.
       type: String
-  dockerimage: demisto/python3:3.9.9.25564
+  dockerimage: demisto/python3:3.10.11.61265
   feed: false
   isfetch: false
   longRunning: false

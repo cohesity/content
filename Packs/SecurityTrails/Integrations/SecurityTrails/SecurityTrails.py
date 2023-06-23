@@ -316,7 +316,8 @@ def domain_command(client, args):
             indicator=domain,
             indicator_type=DBotScoreType.DOMAIN,
             integration_name='SecurityTrails',
-            score=Common.DBotScore.NONE
+            score=Common.DBotScore.NONE,
+            reliability=demisto.params().get('integrationReliability')
         )
         domain_indicator = Common.Domain(
             domain=domain,
@@ -978,6 +979,7 @@ def query_sql_command(client, args):
     }
     res = client.sql(sql=query, timeout=timeout)
     total = res.get('total', {}).get('value')
+    pages = 0
     if total:
         pages = total // 100
     output = {

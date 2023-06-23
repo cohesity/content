@@ -93,8 +93,7 @@ def reset_last_run():
 
 
 def get_indicators(client: OpenCTIApiClient, indicator_types: List[str], score: List[str] = None,
-                   limit: Optional[int] = 500,
-                   last_run_id: Optional[str] = None) -> dict:
+                   limit: Optional[int] = 500, last_run_id: Optional[str] = None, search: str = "") -> dict:
     """ Retrieving indicators from the API
 
     Args:
@@ -103,6 +102,7 @@ def get_indicators(client: OpenCTIApiClient, indicator_types: List[str], score: 
         indicator_types: List of indicators types to return.
         last_run_id: The last id from the previous call to use pagination.
         limit: the max indicators to fetch
+        search: The indicator's value to filter by.
 
     Returns:
         indicators: dict of indicators
@@ -119,7 +119,8 @@ def get_indicators(client: OpenCTIApiClient, indicator_types: List[str], score: 
         })
 
     indicators = client.stix_cyber_observable.list(after=last_run_id, first=limit,
-                                                   withPagination=True, filters=filters)
+                                                   withPagination=True, filters=filters,
+                                                   search=search)
     return indicators
 
 
@@ -138,6 +139,7 @@ def get_indicators_command(client: OpenCTIApiClient, args: dict) -> CommandResul
     limit = arg_to_number(args.get('limit', 50))
     start = arg_to_number(args.get('score_start', 1))
     end = arg_to_number(args.get('score_end', 100)) + 1  # type:ignore
+    search = args.get("search", "")
     score = None
     if start or end:
         score = [str(i) for i in range(start, end)]  # type:ignore
@@ -147,7 +149,8 @@ def get_indicators_command(client: OpenCTIApiClient, args: dict) -> CommandResul
         indicator_types=indicator_types,
         limit=limit,
         last_run_id=last_run_id,
-        score=score
+        score=score,
+        search=search
     )
 
     last_run = raw_response.get('pagination', {}).get('endCursor')  # type: ignore
@@ -241,6 +244,7 @@ def indicator_create_command(client: OpenCTIApiClient, args: Dict[str, str]) -> 
         Returns:
             readable_output, raw_response
         """
+    redirect_std_out = argToBoolean(demisto.params().get('redirect_std_out', 'false'))
     indicator_type = args.get("type")
     created_by = args.get("created_by")
     marking_id = args.get("marking_id")
@@ -263,8 +267,8 @@ def indicator_create_command(client: OpenCTIApiClient, args: Dict[str, str]) -> 
         simple_observable_value = value
     try:
         # cti code prints to stdout so we need to catch it.
-        old_stdout = sys.stdout
-        sys.stdout = StringIO()
+        if redirect_std_out:
+            sys.stdout = StringIO()
         result = client.stix_cyber_observable.create(
             simple_observable_key=simple_observable_key,
             simple_observable_value=simple_observable_value,
@@ -274,7 +278,8 @@ def indicator_create_command(client: OpenCTIApiClient, args: Dict[str, str]) -> 
             simple_observable_description=description,
             x_opencti_score=score, observableData=data
         )
-        sys.stdout = old_stdout
+        if redirect_std_out:
+            sys.stdout = sys.__stdout__
     except KeyError as e:
         raise DemistoException(f'Missing argument at data {e}')
 
@@ -626,7 +631,8 @@ def main():
     base_url = params.get('base_url').strip('/')
 
     try:
-        client = OpenCTIApiClient(base_url, api_key, ssl_verify=params.get('insecure'), log_level='error')
+        client = OpenCTIApiClient(base_url, api_key, ssl_verify=params.get('insecure'), log_level='error',
+                                  proxies=handle_proxy())
         command = demisto.command()
         demisto.info(f"Command being called is {command}")
 

@@ -1,7 +1,10 @@
 import io
 import json
+from typing import List
 
 import pytest
+from freezegun import freeze_time
+
 from Syslogv2 import parse_rfc_3164_format, parse_rfc_5424_format, fetch_samples, \
     create_incident_from_syslog_message, Callable, SyslogMessageExtract, update_integration_context_samples, \
     log_message_passes_filter, perform_long_running_loop, parse_rfc_6587_format
@@ -104,7 +107,7 @@ def test_parse_rfc_not_valid(test_case: dict, func: Callable[[bytes], SyslogMess
                                        'sd': {'exampleSDID@32473': {'eventID': '1011', 'eventSource': 'Application',
                                                                     'iut': '3'}}, 'severity': 'notice',
                                        'timestamp': '2003-10-11T22:14:15.003Z', 'version': 1}]])
-def test_fetch_samples(samples: list[dict], mocker):
+def test_fetch_samples(samples: List[dict], mocker):
     """
     Given:
 
@@ -153,6 +156,7 @@ def test_fetch_samples(samples: list[dict], mocker):
                                        'occurred: 2003-10-11T22:14:15.003Z',
                             'name': 'Syslog from [mymachine.example.com][2003-10-11T22:14:15.003Z]',
                             'occurred': '2003-10-11T22:14:15.003Z',
+                            'type': 'test',
                             'rawJSON': '{"app_name": "evntslog", "facility": "local4", "host_name": '
                                        '"mymachine.example.com", "msg": "BOMAn application event log '
                                        'entry", "msg_id": "ID47", "process_id": 123, "sd": '
@@ -188,6 +192,7 @@ def test_fetch_samples(samples: list[dict], mocker):
                                           'timestamp: 2021-11-09T17:07:20',
                                'name': 'Syslog from [mymachine.example.com][2021-11-09T17:07:20]',
                                'occurred': None,
+                               'type': 'test',
                                'rawJSON': '{"app_name": null, "facility": "log_alert", "host_name": '
                                           '"mymachine.example.com", "msg": "softwareupdated[288]: Removing '
                                           'client SUUpdateServiceClient pid=90550, uid=375597002, '
@@ -213,7 +218,7 @@ def test_create_incident_from_syslog_message(extracted_msg: SyslogMessageExtract
     Then:
     - Ensure expected incident is created
     """
-    assert create_incident_from_syslog_message(extracted_msg) == expected
+    assert create_incident_from_syslog_message(extracted_msg, incident_type='test') == expected
 
 
 INCIDENT_EXAMPLE = {'name': 'Syslog from [mymachine.example.com][2021-11-09T17:07:20]',
@@ -456,3 +461,65 @@ def test_get_mapping_fields():
                                     'severity': 'Severity',
                                     'timestamp': 'Timestamp',
                                     'version': 'Syslog Version'}
+
+
+@freeze_time("2022-7-21 21:00:00")
+def test_rfc_3164_long_message():
+    """
+    Given:
+        - A RFC 3164 message with more then 1024 bytes.
+
+    When:
+        - Parsing incoming messages.
+
+    Then:
+        - Parses the message and returns the responding SyslogMessageExtract.
+    """
+    inline_msg = 'message with many chars ' * 50
+    msg = "<13>Jul 26 01:29:23 %{host} " + inline_msg
+    data = msg.encode()
+    assert len(data) > 1024
+
+    parsed = parse_rfc_3164_format(data)
+    assert parsed == SyslogMessageExtract(app_name=None,
+                                          facility='user',
+                                          host_name='%{host}',
+                                          msg=inline_msg,
+                                          msg_id=None,
+                                          process_id=None,
+                                          sd={},
+                                          severity='notice',
+                                          timestamp='2022-07-26T01:29:23',
+                                          version=None,
+                                          occurred=None)
+
+
+@freeze_time("2022-7-21 21:00:00")
+def test_rfc_3164_short_message():
+    """
+    Given:
+        - A RFC 3164 message with less then 1024 bytes.
+
+    When:
+        - Parsing incoming messages.
+
+    Then:
+        - Parses the message and returns the responding SyslogMessageExtract.
+    """
+    inline_msg = 'message with enough chars ' * 20
+    msg = "<13>Jul 26 01:29:23 %{host} " + inline_msg
+    data = msg.encode()
+    assert len(data) <= 1024
+
+    parsed = parse_rfc_3164_format(data)
+    assert parsed == SyslogMessageExtract(app_name=None,
+                                          facility='user',
+                                          host_name='%{host}',
+                                          msg=inline_msg,
+                                          msg_id=None,
+                                          process_id=None,
+                                          sd={},
+                                          severity='notice',
+                                          timestamp='2022-07-26T01:29:23',
+                                          version=None,
+                                          occurred=None)

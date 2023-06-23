@@ -1,5 +1,12 @@
+# Proofpoint TAP
+
 Use the Proofpoint Targeted Attack Protection (TAP) integration to protect against and provide additional visibility into phishing and other malicious email attacks.
 Proofpoint TAP detects, analyzes and blocks advanced threats before they reach your inbox. This includes ransomware and other advanced email threats delivered through malicious attachments and URLs.
+
+
+## Collect Events from Vendor
+
+To configure the collector for Proofpoint TAP, follow the XDR documentation [here](https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Pro-Administrator-Guide/Ingest-Logs-from-Proofpoint-Targeted-Attack-Protection).
 
 ## What does this pack do?
 - Fetches events for all clicks and messages relating to known threats within a specified time period.

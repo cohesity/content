@@ -77,7 +77,7 @@ COMMAND_SCOPES: Dict[str, List[str]] = {
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive.appdata',
         'https://www.googleapis.com/auth/drive.scripts',
-        'https://www.googleapis.com/auth/drive.,etadata',
+        'https://www.googleapis.com/auth/drive.metadata',
     ],
     'FILE_DELETE': [
         'https://www.googleapis.com/auth/drive',
@@ -940,6 +940,7 @@ def prepare_file_read_request(client: 'GSuiteClient', args: Dict[str, str]) -> D
         pageSize=args.get('page_size'),
         pageToken=args.get('page_token'),
         supportsAllDrives=args.get('supports_all_drives'),
+        includeItemsFromAllDrives=args.get('include_items_from_all_drives')
     )
 
     # user_id can be overridden in the args
@@ -1097,8 +1098,8 @@ def prepare_single_file_human_readable(outputs_context: Dict[str, Any], args: Di
 
 
 def prepare_file_command_request(client: 'GSuiteClient', args: Dict[str, str], scopes: List[str]) -> Dict[str, Any]:
-
-    http_request_params: Dict[str, str] = {}
+    # Prepare generic HTTP request params
+    http_request_params = assign_params(supportsAllDrives=args.get('supports_all_drives'))
 
     # user_id can be overridden in the args
     user_id = args.get('user_id') or client.user_id
@@ -1685,7 +1686,16 @@ def main() -> None:
 
     try:
         params = demisto.params()
-        service_account_dict = GSuiteClient.safe_load_non_strict_json(params.get('user_service_account_json'))
+
+        account_json = params.get('user_creds', {}).get('password') or params.get('user_service_account_json')
+        user_id = params.get('user_creds', {}).get('identifier') or params.get('user_id', '')
+        params['user_id'] = user_id
+        params['user_service_account_json'] = account_json
+
+        if not account_json:
+            raise DemistoException('Please fill out the User\'s Service Account JSON field.')
+
+        service_account_dict = GSuiteClient.safe_load_non_strict_json(account_json)
         verify_certificate = not params.get('insecure', False)
         proxy = params.get('proxy', False)
 
@@ -1697,7 +1707,7 @@ def main() -> None:
         gsuite_client = GSuiteClient(service_account_dict,
                                      base_url='https://www.googleapis.com/', verify=verify_certificate, proxy=proxy,
                                      headers=headers,
-                                     user_id=params.get('user_id', ''))
+                                     user_id=user_id)
 
         # Trim the arguments
         args = GSuiteClient.strip_dict(demisto.args())
@@ -1720,7 +1730,6 @@ def main() -> None:
 
     # Log exceptions
     except Exception as e:
-        demisto.error(traceback.format_exc())
         return_error(f'Error: {str(e)}')
 
 

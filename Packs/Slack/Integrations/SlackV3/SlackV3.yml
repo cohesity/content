@@ -1,27 +1,33 @@
-beta: false
-category: Messaging
+sectionOrder:
+- Connect
+- Collect
+category: Messaging and Conferencing
 commonfields:
   id: SlackV3
   version: -1
 configuration:
-- display: ""
+- display: ''
   displaypassword: Bot Token
   name: bot_token
   type: 9
   required: false
   hiddenusername: true
-- display: ""
+  section: Connect
+- display: ''
   displaypassword: App Token
   name: app_token
   type: 9
   required: false
   hiddenusername: true
+  section: Connect
 - display: Dedicated Slack channel to receive notifications
   name: incidentNotificationChannel
   required: false
   type: 0
+  section: Connect
+  advanced: true
 - defaultvalue: Low
-  display: Minimum incident severity to send messages to slack by
+  display: Minimum incident severity by which to send messages to Slack
   name: min_severity
   options:
   - Unknown
@@ -31,6 +37,8 @@ configuration:
   - Critical
   required: false
   type: 15
+  section: Collect
+  advanced: true
 - display: Types of Notifications to Send.
   name: permitted_notifications
   type: 16
@@ -43,64 +51,132 @@ configuration:
   - incidentReminderSLA
   - taskCompleted
   - incidentStatusChanged
+  - failedFetchIncidents
+  - mentionNew
+  - mentionOld
+  section: Collect
+  advanced: true
+  additionalinfo: By default, externalFormSubmit is enabled in order to allow Ask tasks to be sent correctly.
 - defaultvalue: Unclassified
   display: Type of incidents created in Slack
   name: incidentType
   required: false
   type: 13
+  section: Connect
 - display: Allow external users to create incidents via DM
   name: allow_incidents
   required: false
   type: 8
+  section: Collect
+  advanced: true
+- display: Ignore event retries
+  name: ignore_event_retries
+  required: false
+  type: 8
+  additionalinfo: In some cases, events may not be processed fast enough. If you want to attempt to retry the event, select `false`. Note that this can result in some responses being double-posted.
+  defaultvalue: 'true'
+  section: Collect
+  advanced: true
 - display: Use system proxy settings
   name: proxy
   required: false
   type: 8
+  section: Connect
+  advanced: true
 - display: Trust any certificate (not secure)
   name: unsecure
   required: false
   type: 8
+  section: Connect
+  advanced: true
 - defaultvalue: 'true'
-  additionalinfo: "If your organization does not require incident mirroring, or data collection, it is possible to
-  disable the `longRunning` parameter. For those organizations who do wish to use these features, the parameter should
-  be set to `True` to enable the long-running container."
-  display: Long running instance. Required for investigation mirroring and direct
-    messages.
-  hidden: false
+  display: Enable Incident Mirroring
+  name: mirroring
+  required: false
+  type: 8
+  section: Collect
+- defaultvalue: 'true'
+  display: Long running instance. Required for investigation mirroring and direct messages.
   name: longRunning
   required: false
   type: 8
+  additionalinfo: If your organization does not require incident mirroring, or data collection, it is possible to disable the `longRunning` parameter. For those organizations who do want to use these features, the parameter should be set to `True` to enable the long-running container.
+  section: Connect
+  advanced: true
 - defaultvalue: Cortex XSOAR
   display: Bot display name in Slack
   name: bot_name
   required: false
   type: 0
+  section: Connect
+  advanced: true
 - defaultvalue: https://avatars.slack-edge.com/2020-05-24/1142885630851_5529c7f034d9b96ec39c_512.png
   display: Bot icon in Slack - Image URL (Cortex XSOAR icon by default)
   name: bot_icon
   required: false
   type: 0
+  section: Connect
+  advanced: true
 - defaultvalue: '60'
   display: Maximum time to wait for a rate limiting call in seconds
   name: max_limit_time
   required: false
   type: 0
-- defaultvalue: '200'
-  display: Number of objects to return in each paginated call
+  section: Connect
+  advanced: true
+- display: Number of objects to return in each paginated call
   name: paginated_count
   required: false
   type: 0
-- additionalinfo: Only supported in Demisto V6.1 and above.
-  display: Comma separated list of tags To filter the messages sent from demisto.
-  hidden: false
+  defaultvalue: '200'
+  section: Collect
+  advanced: true
+- display: Comma-separated list of tags to filter the messages sent from Cortex XSOAR.
   name: filtered_tags
   required: false
   type: 0
+  additionalinfo: Only supported in Cortex XSOAR V6.1 and above.
+  section: Collect
+  advanced: true
+- display: ''
+  displaypassword: XSOAR API Key
+  name: demisto_api_key
+  type: 9
+  required: false
+  hiddenusername: true
+  additionalinfo: Adding an API key will enable the integration to handle blocks that contain a state and is necessary for the SlackBlockBuilder script.
+  section: Connect
+  advanced: true
 - display: Enable DMs to the bot
-  hidden: false
   name: enable_dm
   required: false
   type: 8
+  defaultvalue: 'false'
+  section: Collect
+  advanced: true
+- display: Disable Caching of Users and Channels
+  name: disable_caching
+  type: 8
+  required: false
+  additionalinfo: This parameter prevents this integration from storing Users and Channels in the integration context. This parameter also prevents paginated calls which can result in timeout errors for large workspaces.
+  defaultvalue: 'false'
+  section: Collect
+  advanced: true
+- display: Extensive Logging
+  name: extensive_logging
+  additionalinfo: This parameter will write additional data to the logs and should only be used when you are directed to by XSOAR support.
+  required: false
+  type: 8
+  defaultvalue: 'false'
+  section: Connect
+  advanced: true
+- display: Common Channels
+  name: common_channels
+  type: 12
+  required: false
+  additionalinfo: For workspaces where a handful of channels are consistently being used, you may add them as a CSV in the format ChannelName:ChannelID.
+  section: Collect
+  advanced: true
 description: Send messages and notifications to your Slack team.
 display: Slack v3
 name: SlackV3
@@ -110,8 +186,7 @@ script:
     - auto: PREDEFINED
       default: true
       defaultValue: all
-      description: The mirroring type. Can be "all", which mirrors everything, "chat",
-        which mirrors only chats (not commands), or "none", which stops all mirroring.
+      description: The mirroring type. Can be "all", which mirrors everything, "chat", which mirrors only chats (not commands), or "none", which stops all mirroring.
       isArray: false
       name: type
       predefined:
@@ -123,8 +198,7 @@ script:
     - auto: PREDEFINED
       default: false
       defaultValue: 'true'
-      description: Whether the channel is auto-closed when an investigation is closed.
-        Can be "true" or "false". Default is "true".
+      description: Whether the channel is auto-closed when an investigation is closed. Can be "true" or "false". Default is "true".
       isArray: false
       name: autoclose
       predefined:
@@ -134,9 +208,8 @@ script:
       secret: false
     - auto: PREDEFINED
       default: false
-      defaultValue: both
-      description: The mirroring direction. Can be "FromDemisto", "ToDemisto", or
-        "Both". Default value is "Both".
+      defaultValue: Both
+      description: The mirroring direction.
       isArray: false
       name: direction
       predefined:
@@ -148,8 +221,7 @@ script:
     - auto: PREDEFINED
       default: false
       defaultValue: group
-      description: The channel type. Can be "channel" or "group". The default value
-        is "group".
+      description: The channel type.
       isArray: false
       name: mirrorTo
       predefined:
@@ -172,8 +244,7 @@ script:
     - auto: PREDEFINED
       default: false
       defaultValue: 'false'
-      description: Whether to remove the Slack administrator (channel creator) from
-        the mirrored channel.
+      description: Whether to remove the Slack administrator (channel creator) from the mirrored channel.
       isArray: false
       name: kickAdmin
       predefined:
@@ -181,21 +252,29 @@ script:
       - 'false'
       required: false
       secret: false
+    - auto: PREDEFINED
+      default: false
+      defaultValue: 'true'
+      description: Whether the mirrored channel should be private or not (true by default).
+      isArray: false
+      name: private
+      predefined:
+      - 'true'
+      - 'false'
+      required: false
     deprecated: false
-    description: Mirrors the investigation between Slack and the Demisto War Room.
+    description: Mirrors the investigation between Slack and the Cortex XSOAR War Room.
     execution: false
     name: mirror-investigation
   - arguments:
     - default: true
-      description: 'The message content. When mentioning another slack user, make
-        sure to do so in the following format: <@user_name>.'
+      description: 'The message content. When mentioning another Slack user, make sure to do so in the following format: <@user_name>.'
       isArray: false
       name: message
       required: false
       secret: false
     - default: false
-      description: The user to whom to send the message. Can be either the username
-        or email address.
+      description: The user to whom to send the message. Can be either the username or email address.
       isArray: false
       name: to
       required: false
@@ -207,6 +286,12 @@ script:
       required: false
       secret: false
     - default: false
+      description: The ID of the Slack channel to which to send the message.
+      isArray: false
+      name: channel_id
+      required: false
+      secret: false
+    - default: false
       description: An entry ID to send as a link.
       isArray: false
       name: entry
@@ -215,8 +300,7 @@ script:
     - auto: PREDEFINED
       default: false
       defaultValue: 'false'
-      description: Whether to include a URL to the relevant component in Demisto.
-        Can be "true" or "false". Default value is "false".
+      description: Whether to include a URL to the relevant component in Cortex XSOAR.
       isArray: false
       name: ignoreAddURL
       predefined:
@@ -225,8 +309,7 @@ script:
       required: false
       secret: false
     - default: false
-      description: The ID of the thread to which to reply - can be retrieved from
-        a previous send-notification command.
+      description: The ID of the thread to which to reply. Can be retrieved from a previous send-notification command.
       isArray: false
       name: threadID
       required: false
@@ -247,10 +330,15 @@ script:
       type: String
   - arguments:
     - default: false
-      description: The name of the channel to archive. If not provided, the mirrored
-        investigation channel is archived (if the channel exists).
+      description: The name of the channel to archive. If not provided, the mirrored investigation channel is archived (if the channel exists).
       isArray: false
       name: channel
+      required: false
+      secret: false
+    - default: false
+      description: The ID of the channel to archive. If not provided, the mirrored investigation channel is archived (if the channel exists).
+      isArray: false
+      name: channel_id
       required: false
       secret: false
     deprecated: false
@@ -265,15 +353,13 @@ script:
       required: true
       secret: false
     - default: false
-      description: The user to whom to send the file. Can be the username or the email
-        address.
+      description: The user to whom to send the file. Can be the username or the email address.
       isArray: false
       name: to
       required: false
       secret: false
     - default: false
-      description: The name of the Slack group (private channel) to which to send
-        the file.
+      description: The name of the Slack group (private channel) to which to send the file.
       isArray: false
       name: group
       required: false
@@ -285,8 +371,13 @@ script:
       required: false
       secret: false
     - default: false
-      description: The ID of the thread to which to reply - can be retrieved from
-        a previous send-notification command.
+      description: The ID of the Slack channel to which to send the file.
+      isArray: false
+      name: channel_id
+      required: false
+      secret: false
+    - default: false
+      description: The ID of the thread to which to reply. Can be retrieved from a previous send-notification command.
       isArray: false
       name: threadID
       required: false
@@ -298,16 +389,20 @@ script:
       required: false
       secret: false
     deprecated: false
-    description: Sends a file to a user, channel, or group. If not specified, the
-      file is sent to the mirrored investigation channel (if the channel exists).
+    description: Sends a file to a user, channel, or group. If not specified, the file is sent to the mirrored investigation channel (if the channel exists).
     execution: false
     name: slack-send-file
   - arguments:
     - default: false
-      description: The channel name. If not specified, the topic of the mirrored investigation
-        channel is set (if the channel exists).
+      description: The channel name. If not specified, the topic of the mirrored investigation channel is set (if the channel exists).
       isArray: false
       name: channel
+      required: false
+      secret: false
+    - default: false
+      description: The channel ID. If not specified, the topic of the mirrored investigation channel is set (if the channel exists).
+      isArray: false
+      name: channel_id
       required: false
       secret: false
     - default: true
@@ -324,7 +419,7 @@ script:
     - auto: PREDEFINED
       default: false
       defaultValue: private
-      description: The channel type. Can be "private" or "public".
+      description: The channel type.
       isArray: false
       name: type
       predefined:
@@ -339,30 +434,39 @@ script:
       required: true
       secret: false
     - default: false
-      description: 'A CSV list of user names or email addresses to invite to the channel.
-        For example: "user1, user2...".'
+      description: 'A CSV list of user names or email addresses to invite to the channel. For example: "user1, user2...".'
       isArray: false
       name: users
       required: false
       secret: false
     deprecated: false
     description: Creates a channel in Slack.
+    outputs:
+    - contextPath: Slack.Channel.ID
+      description: The ID of the channel.
+      type: String
+    - contextPath: Slack.Channel.Name
+      description: The name of the channel.
+      type: String
     execution: false
     name: slack-create-channel
   - arguments:
     - default: true
-      description: 'A CSV list of usernames or email addresses to invite to join the
-        channel. For example: "user1, user2...".'
+      description: 'A CSV list of usernames or email addresses to invite to join the channel. For example: "user1, user2...".'
       isArray: false
       name: users
       required: true
       secret: false
     - default: false
-      description: The name of the channel to which to invite the users. If the name
-        of the channel is not specified, the name of the mirrored investigation channel
-        is used (if the channel exists).
+      description: The name of the channel to which to invite the users. If the name of the channel is not specified, the name of the mirrored investigation channel is used (if the channel exists).
       isArray: false
       name: channel
+      required: false
+      secret: false
+    - default: false
+      description: The ID of the channel to which to invite the users. If the ID of the channel is not specified, the ID of the mirrored investigation channel is used (if the channel exists).
+      isArray: false
+      name: channel_id
       required: false
       secret: false
     deprecated: false
@@ -371,18 +475,21 @@ script:
     name: slack-invite-to-channel
   - arguments:
     - default: true
-      description: 'A CSV list of usernames or email addresses to remove from the
-        a channel. For example: "user1, user2..."'
+      description: 'A CSV list of usernames or email addresses to remove from the a channel. For example: "user1, user2..."'
       isArray: false
       name: users
       required: true
       secret: false
     - default: false
-      description: The name of the channel from which to remove the users. If the
-        name of the channel is not specified, the mirrored investigation channel is
-        used (if the channel exists).
+      description: The name of the channel from which to remove the users. If the name of the channel is not specified, the mirrored investigation channel is used (if the channel exists).
       isArray: false
       name: channel
+      required: false
+      secret: false
+    - default: false
+      description: The ID of the channel from which to remove the users. If the ID of the channel is not specified, the mirrored investigation channel is used (if the channel exists).
+      isArray: false
+      name: channel_id
       required: false
       secret: false
     deprecated: false
@@ -397,11 +504,15 @@ script:
       required: true
       secret: false
     - default: false
-      description: The current name of the channel. If the name of the channel is
-        not specified, the mirrored investigation channel is used (if the channel
-        exists).
+      description: The current name of the channel. If the name of the channel is not specified, the mirrored investigation channel is used (if the channel exists).
       isArray: false
       name: channel
+      required: false
+      secret: false
+    - default: false
+      description: The current ID of the channel. If the ID of the channel is not specified, the mirrored investigation channel is used (if the channel exists).
+      isArray: false
+      name: channel_id
       required: false
       secret: false
     deprecated: false
@@ -436,8 +547,7 @@ script:
       description: The email address of the user.
       type: String
   - deprecated: false
-    description: Returns the integration context as a file. Use this command for debug
-      purposes only.
+    description: Returns the integration context as a file. Use this command for debug purposes only.
     execution: false
     hidden: true
     name: slack-get-integration-context
@@ -446,19 +556,23 @@ script:
       description: The channel containing the message.
       isArray: false
       name: channel
-      required: true
+      required: false
       secret: false
     - default: false
-      description: The ID of the thread of which to pin - can be retrieved from
-        a previous send-notification command.
+      description: The ID of the thread of which to pin. Can be retrieved from a previous send-notification command.
       isArray: false
       name: threadID
       required: true
       secret: false
+    - default: false
+      description: The ID for the channel containing the message.
+      isArray: false
+      name: channel_id
+      required: false
+      secret: false
     deprecated: false
     description: Pins a selected message to the given channel.
     execution: false
-    hidden: false
     name: slack-pin-message
   - arguments:
     - default: false
@@ -468,8 +582,13 @@ script:
       required: false
       secret: false
     - default: false
-      description: The ID of the thread of which to edit - can be retrieved from
-        a previous send-notification command.
+      description: The ID for the channel the message is posted in.
+      isArray: false
+      name: channel_id
+      required: false
+      secret: false
+    - default: false
+      description: The ID of the thread of which to edit. Can be retrieved from a previous send-notification command.
       isArray: false
       name: threadID
       required: true
@@ -491,12 +610,10 @@ script:
       name: ignore_add_url
       required: false
       secret: false
-      description: Whether to include a URL to the relevant component in XSOAR.
-        Can be "true" or "false". Default value is "false".
+      description: Whether to include a URL to the relevant component in XSOAR. Can be "true" or "false". Default value is "false".
     deprecated: false
     description: Edit an existing Slack message.
     execution: false
-    hidden: false
     name: slack-edit-message
     outputs:
     - contextPath: Slack.Thread.ID
@@ -508,7 +625,7 @@ script:
     - contextPath: Slack.Thread.Text
       description: The text the message was updated with.
       type: String
-  dockerimage: demisto/slackv3:1.0.0.25130
+  dockerimage: demisto/slackv3:1.0.0.62921
   feed: false
   isfetch: false
   longRunning: true
@@ -520,3 +637,4 @@ script:
 fromversion: 5.5.0
 tests:
 - SlackV3 TestPB
+- Test_SlackV3_NonCaching

@@ -1,13 +1,25 @@
 Predict phishing URLs using a pre-trained model.
 
+## Security Recommendations
+---
+
+This script uses the [Rasterize](https://xsoar.pan.dev/docs/reference/integrations/rasterize) integration. If this script is used to rasterize untrusted URLs, we strongly recommend following the security recommendations included at the [Rasterize Documentation](https://xsoar.pan.dev/docs/reference/integrations/rasterize).
+
 ## Script Data
 ---
 
 | **Name** | **Description** |
 | --- | --- |
 | Script Type | python3 |
-| Tags |  |
+| Tags | ml |
 | Cortex XSOAR Version | 6.0.0 |
+
+## Used In
+
+---
+This script is used in the following playbooks and scripts.
+
+Phishing - Machine Learning Analysis
 
 ## Inputs
 ---
@@ -21,6 +33,7 @@ Predict phishing URLs using a pre-trained model.
 | forceModel | Whether to force the model to run if the URL belongs to the whitelist. If True, the model will run in every case. If False, the model will run only if the URL does not belong to the whitelist. |
 | resetModel | Whether to reset the model to the model existing in Docker. |
 | debug | Whether to enter debug mode. |
+| reliability | Reliability of the source providing the intelligence data. |
 
 ## Outputs
 ---

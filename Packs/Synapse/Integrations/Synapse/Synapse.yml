@@ -24,28 +24,54 @@ configuration:
   name: proxy
   required: false
   type: 8
-- additionalinfo: 'Optionally set display timezone for timestamps. Default is UTC.
-    Ex: "US/Eastern"'
+- additionalinfo: 'Optionally set display timezone for timestamps. Default is UTC. Ex: "US/Eastern"'
   display: Timezone (optional)
   name: timezone
   required: false
   type: 0
-- additionalinfo: Tag that denotes indicator is malicious (i.e. "threat.mal" or "mal.foo.bar").
-    Depends on custom tag heirarchy. Use highest heirarchical tag that is considered
-    malicious.
+- additionalinfo: Tag that denotes indicator is malicious (i.e. "threat.mal" or "mal.foo.bar"). Depends on custom tag heirarchy. Use highest heirarchical tag that is considered malicious.
   display: Malicious Tag
-  hidden: false
   name: bad_tag
   required: false
   type: 0
-- additionalinfo: Tag that denotes indicator is benign (i.e. "omit.benign" or "legit.beign").
-    Depends on custom tag heirarchy. Use highest heirarchical tag that is considered
-    benign.
+- additionalinfo: Tag that denotes indicator is benign (i.e. "omit.benign" or "legit.beign"). Depends on custom tag heirarchy. Use highest heirarchical tag that is considered benign.
   display: Benign Tag
-  hidden: false
   name: good_tag
   required: false
   type: 0
+- display: Use Synapse Optic
+  name: use_optic
+  required: false
+  type: 8
+- additionalinfo: Reliability of the source providing the intelligence data.
+  defaultvalue: B - Usually reliable
+  display: Source Reliability
+  name: integrationReliability
+  options:
+  - A+ - 3rd party enrichment
+  - A - Completely reliable
+  - B - Usually reliable
+  - C - Fairly reliable
+  - D - Not usually reliable
+  - E - Unreliable
+  - F - Reliability cannot be judged
+  required: false
+  type: 15
+- defaultvalue: indicatorType
+  name: feedExpirationPolicy
+  display: ''
+  options:
+  - never
+  - interval
+  - indicatorType
+  - suddenDeath
+  required: false
+  type: 17
+- defaultvalue: '20160'
+  name: feedExpirationInterval
+  display: ''
+  required: false
+  type: 1
 description: Synapse intelligence analysis platform.
 display: Synapse
 name: Synapse
@@ -424,8 +450,7 @@ script:
       required: true
       secret: false
     deprecated: false
-    description: Query the Synapse data model and return details for given type or
-      form (i.e. "inet:ipv4" for an IPv4 IP address).
+    description: Query the Synapse data model and return details for given type or form (i.e. "inet:ipv4" for an IPv4 IP address).
     execution: false
     name: synapse-query-model
     outputs:
@@ -447,7 +472,7 @@ script:
     - contextPath: Synapse.Model.Valu
       description: The given value of the Synapse object type.
       type: String
-  dockerimage: demisto/aiohttp:1.0.0.13810
+  dockerimage: demisto/py3-tools:1.0.0.31193
   feed: false
   isfetch: false
   longRunning: false

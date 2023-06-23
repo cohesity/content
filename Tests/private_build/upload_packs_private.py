@@ -11,7 +11,7 @@ from Tests.Marketplace.marketplace_services import init_storage_client, Pack, lo
 from Tests.Marketplace.marketplace_statistics import StatisticsHandler
 from Tests.Marketplace.upload_packs import get_packs_names, extract_packs_artifacts, download_and_extract_index, \
     update_index_folder, clean_non_existing_packs, upload_index_to_storage, create_corepacks_config, \
-    check_if_index_is_updated, print_packs_summary, get_packs_summary
+    check_if_index_is_updated, print_packs_summary, get_packs_summary, prepare_index_json
 from Tests.Marketplace.marketplace_constants import PackStatus, GCPConfig, CONTENT_ROOT_PATH
 from demisto_sdk.commands.common.tools import str2bool
 
@@ -85,6 +85,7 @@ def add_private_pack(private_packs, private_pack_metadata, changed_pack_id):
             'vendorId': private_pack_metadata.get('vendorId', ""),
             'partnerId': private_pack_metadata.get('partnerId', ""),
             'partnerName': private_pack_metadata.get('partnerName', ""),
+            'disableMonthly': private_pack_metadata.get('disableMonthly', False),
             'contentCommitHash': private_pack_metadata.get('contentCommitHash', "")
         })
     return private_packs
@@ -171,6 +172,7 @@ def get_private_packs(private_index_path: str, pack_names: set = None,
     private_metadata_paths = get_existing_private_packs_metadata_paths(private_index_path)
     # In the private build, there is always exactly one modified pack
     changed_pack_id = list(pack_names)[0] if pack_names and len(pack_names) > 0 else ''
+    logging.info(f'searching for {changed_pack_id} (extracted from {pack_names})')
     private_packs = add_existing_private_packs_from_index(private_metadata_paths, changed_pack_id)
     private_packs = add_changed_private_pack(private_packs, extract_destination_path, changed_pack_id)
 
@@ -241,7 +243,7 @@ def should_upload_core_packs(storage_bucket_name: str) -> bool:
 
 
 # pylint: disable=R0911
-def create_and_upload_marketplace_pack(upload_config: Any, pack: Any, storage_bucket: Any, index_folder_path: str,
+def create_and_upload_marketplace_pack(upload_config: Any, pack: Pack, storage_bucket: Any, index_folder_path: str,
                                        packs_dependencies_mapping: dict, private_bucket_name: str, storage_base_path,
                                        private_storage_bucket: bool = None,
                                        content_repo: bool = None, current_commit_hash: str = '',
@@ -277,72 +279,71 @@ def create_and_upload_marketplace_pack(upload_config: Any, pack: Any, storage_bu
 
     task_status = pack.load_user_metadata()
     if not task_status:
-        pack.status = PackStatus.FAILED_LOADING_USER_METADATA.name
+        pack.status = PackStatus.FAILED_LOADING_USER_METADATA.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.collect_content_items()
     if not task_status:
-        pack.status = PackStatus.FAILED_COLLECT_ITEMS.name
+        pack.status = PackStatus.FAILED_COLLECT_ITEMS.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.upload_integration_images(storage_bucket, storage_base_path)
     if not task_status:
-        pack.status = PackStatus.FAILED_IMAGES_UPLOAD.name
+        pack.status = PackStatus.FAILED_IMAGES_UPLOAD.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.upload_author_image(storage_bucket, storage_base_path)
     if not task_status:
-        pack.status = PackStatus.FAILED_AUTHOR_IMAGE_UPLOAD.name
+        pack.status = PackStatus.FAILED_AUTHOR_IMAGE_UPLOAD.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status, _ = pack.format_metadata(index_folder_path=index_folder_path,
                                           packs_dependencies_mapping=packs_dependencies_mapping,
                                           build_number=build_number, commit_hash=current_commit_hash,
-                                          pack_was_modified=pack_was_modified, statistics_handler=None)
+                                          statistics_handler=None)
 
     if not task_status:
-        pack.status = PackStatus.FAILED_METADATA_PARSING.name
+        pack.status = PackStatus.FAILED_METADATA_PARSING.name  # type: ignore[misc]
         pack.cleanup()
         return
 
-    task_status, not_updated_build = pack.prepare_release_notes(index_folder_path, build_number)
+    task_status, not_updated_build, pack_versions_to_keep = pack.prepare_release_notes(index_folder_path, build_number)
     if not task_status:
-        pack.status = PackStatus.FAILED_RELEASE_NOTES.name
+        pack.status = PackStatus.FAILED_RELEASE_NOTES.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     if not_updated_build:
-        pack.status = PackStatus.PACK_IS_NOT_UPDATED_IN_RUNNING_BUILD.name
+        pack.status = PackStatus.PACK_IS_NOT_UPDATED_IN_RUNNING_BUILD.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.remove_unwanted_files(remove_test_playbooks)
     if not task_status:
-        pack.status = PackStatus.FAILED_REMOVING_PACK_SKIPPED_FOLDERS
+        pack.status = PackStatus.FAILED_REMOVING_PACK_SKIPPED_FOLDERS  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.sign_pack(signature_key)
     if not task_status:
-        pack.status = PackStatus.FAILED_SIGNING_PACKS.name
+        pack.status = PackStatus.FAILED_SIGNING_PACKS.name  # type: ignore[misc]
         pack.cleanup()
         return
 
-    task_status, zip_pack_path = pack.zip_pack(extract_destination_path, pack._pack_name, enc_key,
+    task_status, zip_pack_path = pack.zip_pack(extract_destination_path, enc_key,
                                                private_artifacts_dir, secondary_enc_key)
-
     if not task_status:
-        pack.status = PackStatus.FAILED_ZIPPING_PACK_ARTIFACTS.name
+        pack.status = PackStatus.FAILED_ZIPPING_PACK_ARTIFACTS.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.is_pack_encrypted(zip_pack_path, enc_key)
     if not task_status:
-        pack.status = PackStatus.FAILED_DECRYPT_PACK.name
+        pack.status = PackStatus.FAILED_DECRYPT_PACK.name  # type: ignore[misc]
         pack.cleanup()
         return
 
@@ -360,37 +361,37 @@ def create_and_upload_marketplace_pack(upload_config: Any, pack: Any, storage_bu
     pack.bucket_url = bucket_url
 
     if not task_status:
-        pack.status = PackStatus.FAILED_UPLOADING_PACK.name
+        pack.status = PackStatus.FAILED_UPLOADING_PACK.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status, exists_in_index = pack.check_if_exists_in_index(index_folder_path)
     if not task_status:
-        pack.status = PackStatus.FAILED_SEARCHING_PACK_IN_INDEX.name
+        pack.status = PackStatus.FAILED_SEARCHING_PACK_IN_INDEX.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = pack.prepare_for_index_upload()
     if not task_status:
-        pack.status = PackStatus.FAILED_PREPARING_INDEX_FOLDER.name
+        pack.status = PackStatus.FAILED_PREPARING_INDEX_FOLDER.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     task_status = update_index_folder(index_folder_path=index_folder_path, pack_name=pack.name,
                                       pack_path=pack.path, pack_version=pack.latest_version,
-                                      hidden_pack=pack.hidden)
+                                      hidden_pack=pack.hidden, pack_versions_to_keep=pack_versions_to_keep)
     if not task_status:
-        pack.status = PackStatus.FAILED_UPDATING_INDEX_FOLDER.name
+        pack.status = PackStatus.FAILED_UPDATING_INDEX_FOLDER.name  # type: ignore[misc]
         pack.cleanup()
         return
 
     # in case that pack already exist at cloud storage path and in index, don't show that the pack was changed
     if skipped_pack_uploading and exists_in_index:
-        pack.status = PackStatus.PACK_ALREADY_EXISTS.name
+        pack.status = PackStatus.PACK_ALREADY_EXISTS.name  # type: ignore[misc]
         pack.cleanup()
         return
 
-    pack.status = PackStatus.SUCCESS.name
+    pack.status = PackStatus.SUCCESS.name  # type: ignore[misc]
 
 
 def option_handler():
@@ -500,6 +501,7 @@ def main():
                                                                                    is_bucket_upload_flow=False,
                                                                                    is_private_build=True)
     else:
+        logging.info('Ignoring git calculation in private build.')
         current_commit_hash, remote_previous_commit_hash = "", ""
         content_repo = None
 
@@ -512,6 +514,8 @@ def main():
     if not is_private_build:
         check_if_index_is_updated(index_folder_path, content_repo, current_commit_hash, remote_previous_commit_hash,
                                   storage_bucket)
+    else:
+        logging.info('Not checking marketplace index in private build.')
 
     if private_bucket_name:  # Add private packs to the index
         private_packs, private_index_path, private_index_blob = update_index_with_priced_packs(private_storage_bucket,
@@ -525,7 +529,7 @@ def main():
         private_packs = []
 
     # clean index and gcs from non existing or invalid packs
-    clean_non_existing_packs(index_folder_path, private_packs, default_storage_bucket, storage_base_path)
+    clean_non_existing_packs(index_folder_path, private_packs, default_storage_bucket, storage_base_path, [])
     # starting iteration over packs
     for pack in packs_list:
         create_and_upload_marketplace_pack(upload_config, pack, storage_bucket, index_folder_path,
@@ -541,16 +545,34 @@ def main():
     # finished iteration over content packs
     if is_private_build:
         delete_public_packs_from_index(index_folder_path)
-        upload_index_to_storage(index_folder_path, extract_destination_path, private_index_blob, build_number,
-                                private_packs, current_commit_hash, index_generation, is_private_build,
-                                landing_page_sections=landing_page_sections)
+
+        prepare_index_json(index_folder_path=index_folder_path,
+                           build_number=build_number,
+                           private_packs=private_packs,
+                           current_commit_hash=current_commit_hash,
+                           landing_page_sections=landing_page_sections
+                           )
+
+        upload_index_to_storage(index_folder_path=index_folder_path,
+                                extract_destination_path=extract_destination_path,
+                                index_blob=private_index_blob,
+                                index_generation=index_generation,
+                                is_private=is_private_build)
 
     else:
-        upload_index_to_storage(index_folder_path, extract_destination_path, index_blob, build_number, private_packs,
-                                current_commit_hash, index_generation, landing_page_sections=landing_page_sections)
+        prepare_index_json(index_folder_path=index_folder_path,
+                           build_number=build_number,
+                           private_packs=private_packs,
+                           current_commit_hash=current_commit_hash,
+                           landing_page_sections=landing_page_sections)
+
+        upload_index_to_storage(index_folder_path=index_folder_path,
+                                extract_destination_path=extract_destination_path,
+                                index_blob=index_blob,
+                                index_generation=index_generation)
 
     # get the lists of packs divided by their status
-    successful_packs, skipped_packs, failed_packs = get_packs_summary(packs_list)
+    successful_packs, _, skipped_packs, failed_packs = get_packs_summary(packs_list)
 
     # summary of packs status
     print_packs_summary(successful_packs, skipped_packs, failed_packs)

@@ -101,6 +101,7 @@ def domain_command(client: Client, args: Dict[str, Any]) -> List[CommandResults]
             integration_name='HostIo',
             indicator_type=DBotScoreType.DOMAIN,
             score=score,
+            reliability=demisto.params().get('integrationReliability')
         )
 
         domain_standard_context = Common.Domain(
@@ -176,7 +177,9 @@ def main() -> None:
     :rtype:
     """
     params = demisto.params()
-    api_key = params.get('token')
+    api_key = params.get('credentials_token', {}).get('password') or params.get('token')
+    if not api_key:
+        return_error('API Key must be provided.')
     base_url = urljoin(params['url'], '/api')
 
     verify_certificate = not params.get('insecure', False)
@@ -204,7 +207,6 @@ def main() -> None:
             return_results(search_command(client, demisto.args()))
 
     except Exception as e:
-        demisto.error(traceback.format_exc())
         return_error(f'Failed to execute {demisto.command()} command.\nError:\n{str(e)}')
 
 

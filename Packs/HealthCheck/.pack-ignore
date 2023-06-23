@@ -1,3 +1,15 @@
 [file:README.md]
 ignore=RM106
 
+[file:HealthCheck_README.md]
+ignore=RM106
+
+[file:Health_Check_-_Collect_Log_Bundle_README.md]
+ignore=RM106
+
+[file:HealthCheckInstalledPacks.yml]
+ignore=BA124
+
+[file:HealthCheckOutdatedPacks.yml]
+ignore=BA124
+

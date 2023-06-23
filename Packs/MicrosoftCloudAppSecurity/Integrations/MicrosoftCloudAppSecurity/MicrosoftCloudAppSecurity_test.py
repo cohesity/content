@@ -1,8 +1,12 @@
-import pytest
+from datetime import datetime
 import json
 
-from CommonServerPython import DemistoException
-from MicrosoftCloudAppSecurity import Client
+import pytest
+import demistomock as demisto
+
+from freezegun import freeze_time
+from CommonServerPython import DemistoException, timedelta
+from MicrosoftCloudAppSecurity import Client, fetch_incidents
 
 
 def get_fetch_data():
@@ -65,7 +69,8 @@ def test_args_to_filter_for_dismiss_and_resolve_alerts(alert_ids, customer_filte
     assert res == expected
 
 
-client_mocker = Client(base_url='https://demistodev.eu2.portal.cloudappsecurity.com/api/v1')
+client_mocker = Client(base_url='https://demistodev.eu2.portal.cloudappsecurity.com/api/v1', app_id='1234', verify=True,
+                       proxy=True, auth_mode='legacy')
 
 
 def test_list_alerts_command(requests_mock):
@@ -85,7 +90,8 @@ def test_list_activities_command(requests_mock):
                       '97134000_15600_97ee2049-893e-4c9d-a312-08d82b46faf7',
                       json=activities["ACTIVITIES_BY_ID_DATA"])
     res = list_activities_command(client_mocker, {'activity_id': '97134000_15600_97ee2049-893e-4c9d-a312-08d82b46faf7'})
-    assert res[0].outputs[0] == activities["ACTIVITIES_BY_ID_DATA_CONTEXT"]
+    assert not isinstance(res[0].outputs, list)
+    assert res[0].outputs == activities["ACTIVITIES_BY_ID_DATA_CONTEXT"]
     assert isinstance(res[0].indicator, Common.IP)
     assert res[0].indicator.ip == '8.8.8.8'
     assert float(res[0].indicator.geo_latitude) == 32.0679
@@ -126,34 +132,14 @@ def test_params_to_filter(severity, resolution_status, expected):
     assert res == expected
 
 
-def test_alerts_to_incidents_and_fetch_start_from(requests_mock):
-    """
-    Given:
-        `getLastRun` which holds `last_fetch` and `last_fetch_id`.
-    When:
-        There are two incidents to fetch, That one of them we had already fetched the previous time.
-    Then:
-        We only fetched the one that does not exist in his system.
-    """
-    from MicrosoftCloudAppSecurity import alerts_to_incidents_and_fetch_start_from
-    incidents = get_fetch_data()
-    requests_mock.get('https://demistodev.eu2.portal.cloudappsecurity.com/api/v1/alerts/',
-                      json=incidents["incidents"])
-    res_incidents, fetch_start_time, new_last_fetch_id = \
-        alerts_to_incidents_and_fetch_start_from(incidents["incidents"], '1602771392519',
-                                                 {"last_fetch": 1603365903,
-                                                  "last_fetch_id": "5f919e55b0703c2f5a23d9d8"})
-    assert fetch_start_time == 1603385903000
-    assert new_last_fetch_id == "5f919e55b0703c2f5a23d9d7"
+def start_freeze_time(timestamp):
+    _start_freeze_time = freeze_time(timestamp)
+    _start_freeze_time.start()
+    return datetime.now()
 
-    requests_mock.get('https://demistodev.eu2.portal.cloudappsecurity.com/api/v1/alerts/',
-                      json=[])
-    res_incidents, fetch_start_time, new_last_fetch_id = \
-        alerts_to_incidents_and_fetch_start_from([], '1602771392519', {"last_fetch": 1603365903,
-                                                                       "last_fetch_id": "5f919e55b0703c2f5a23d9d8"})
-    assert fetch_start_time == 1602771392519
-    assert new_last_fetch_id == "5f919e55b0703c2f5a23d9d8"
-    assert res_incidents == []
+
+def create_occur_timestamp(timestamp, timedelta_object=timedelta(minutes=0)):
+    return int((start_freeze_time(timestamp) - timedelta_object).timestamp()) * 1000
 
 
 class TestCloseBenign:
@@ -416,3 +402,476 @@ class TestCloseFalsePositive:
 
         with pytest.raises(DemistoException, match='Failed to close the following alerts:.*'):
             close_false_positive_command(client_mocker, args)
+
+
+class TestFetchIncidents:
+    LAST_RUN = {}
+    FREEZE_TIMESTAMP = '2022-05-15T11:00:00.000'
+
+    def set_last_run(self, new_last_run):
+        self.LAST_RUN = new_last_run
+
+    @pytest.mark.parametrize(
+        'params, start_incidents, phase2_incident, phase3_incident',
+        [
+            ({'limit': 50, 'first_fetch': '50 minutes', 'look_back': 15},
+             {'data': [
+                 {
+                     'title': 'test2',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=10)),
+                     '_id': '2',
+                     'entities': []
+                 },
+                 {
+                     'title': 'test4',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=5)),
+                     '_id': '4',
+                     'entities': []
+                 },
+                 {
+                     'title': 'test5',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=2)),
+                     '_id': '5',
+                     'entities': []
+                 }
+             ]},
+             {
+                 'title': 'test3',
+                 'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=8)),
+                 '_id': '3',
+                 'entities': []
+            },
+                {
+                 'title': 'test1',
+                 'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=11)),
+                 '_id': '1',
+                 'entities': []
+            }),
+            ({'limit': 50, 'first_fetch': '50 minutes', 'look_back': 1000},
+             {'data': [
+                 {
+                     'title': 'test2',
+                     'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=3, minutes=20)),
+                     '_id': '2',
+                     'entities': []
+                 },
+                 {
+                     'title': 'test4',
+                     'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=2, minutes=26)),
+                     '_id': '4',
+                     'entities': []
+                 },
+                 {
+                     'title': 'test5',
+                     'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=1, minutes=20)),
+                     '_id': '5',
+                     'entities': []
+                 }
+             ]},
+             {
+                 'title': 'test3',
+                 'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=2, minutes=45)),
+                 '_id': '3',
+                 'entities': []
+            },
+                {
+                 'title': 'test1',
+                 'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=3, minutes=50)),
+                 '_id': '1',
+                 'entities': []
+            })
+        ]
+    )
+    def test_fetch_incidents_with_look_back_greater_than_zero(
+            self, mocker, params, start_incidents, phase2_incident, phase3_incident
+    ):
+        """
+        Given
+        - fetch incidents parameters including look back according to their opened time.
+        - first scenario - fetching with minutes when look_back=60 minutes
+        - second scenario - fetching with hours when look_back=1000 minutes
+
+        When
+        - trying to fetch incidents for 3 rounds.
+
+        Then
+        - first fetch - should fetch incidents 2, 4, 5 (because only them match the query)
+        - second fetch - should fetch incident 3 (because now incident 2, 4, 5, 3 matches the query too)
+        - third fetch - should fetch incident 1 (because now incident 2, 4, 5, 3, 1 matches the query too)
+        - fourth fetch - should fetch nothing as there are not new incidents who match the query
+        - make sure that incidents who were already fetched would not be fetched again.
+        """
+
+        # reset last run
+        self.LAST_RUN = {}
+
+        mocker.patch.object(demisto, 'getLastRun', return_value=self.LAST_RUN)
+        mocker.patch.object(demisto, 'setLastRun', side_effect=self.set_last_run)
+
+        mocker.patch.object(client_mocker, 'list_incidents', return_value=start_incidents)
+        mocker.patch('MicrosoftCloudAppSecurity.format_fetch_start_time_to_timestamp',
+                     side_effect=create_occur_timestamp)
+
+        filters = {'severity': {'eq': []}, 'resolutionStatus': {'eq': []}}
+        max_results = params.get('limit')
+        first_fetch = params.get('first_fetch')
+        look_back = params.get('look_back')
+
+        # Run first fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 3
+        for expected_incident_id, alert in zip(['2', '4', '5'], alerts):
+            assert alert.get('name') == f'test{expected_incident_id}'
+
+        # second fetch preparation
+        for alert in start_incidents.get('data'):
+            alert['entities'] = []
+        start_incidents.get('data').append(phase2_incident)
+
+        # Run second fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 1
+        assert alerts[0].get('name') == 'test3'
+
+        # third fetch preparation
+        for alert in start_incidents.get('data'):
+            alert['entities'] = []
+        start_incidents.get('data').append(phase3_incident)
+
+        # Run third fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 1
+        assert alerts[0].get('name') == 'test1'
+
+        # Fourth fetch preparation
+        for alert in start_incidents.get('data'):
+            alert['entities'] = []
+
+        # Run fourth fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 0
+
+    @pytest.mark.parametrize(
+        'params, incidents, phase2_incident, phase3_incident',
+        [
+            ({'limit': 50, 'first_fetch': '50 minutes', 'look_back': 0},
+             {'data': [
+                 {
+                     'title': 'test1',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=10)),
+                     '_id': '1',
+                     'entities': []
+                 },
+                 {
+                     'title': 'test2',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=8)),
+                     '_id': '2',
+                     'entities': []
+                 },
+                 {
+                     'title': 'test3',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=7)),
+                     '_id': '3',
+                     'entities': []
+                 }
+             ]},
+             {'data': [
+                 {
+                     'title': 'test4',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=5)),
+                     '_id': '4',
+                     'entities': []
+                 }
+             ]},
+             {'data': [
+                 {
+                     'title': 'test5',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=4)),
+                     '_id': '5',
+                     'entities': []
+                 }
+             ]},
+             ),
+            ({'limit': 50, 'first_fetch': '3 days', 'look_back': 0},
+             {
+                 'data': [
+                     {
+                         'title': 'test1',
+                         'timestamp':
+                             create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=8, minutes=51)),
+                         '_id': '1',
+                         'entities': []
+                     },
+                     {
+                         'title': 'test2',
+                         'timestamp':
+                             create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=7, minutes=45)),
+                         '_id': '2',
+                         'entities': []
+                     },
+                     {
+                         'title': 'test3',
+                         'timestamp':
+                             create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=7, minutes=44)),
+                         '_id': '3',
+                         'entities': []
+                     }
+                 ]
+            },
+                {'data': [
+                 {
+                     'title': 'test4',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=7, minutes=44)),
+                     '_id': '4',
+                     'entities': []
+                 }
+                 ]
+                 },
+                {'data': [
+                 {
+                     'title': 'test5',
+                     'timestamp':
+                         create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(hours=1, minutes=34)),
+                     '_id': '5',
+                     'entities': []
+                 }
+                 ]
+                 }
+            )
+        ]
+    )
+    def test_fetch_incidents_with_look_back_equals_zero(
+        self, mocker, params, incidents, phase2_incident, phase3_incident
+    ):
+        """
+        Given
+        - fetch incidents parameters with any look back according to their opened time (normal fetch incidents).
+        - first scenario - fetching with minutes when look_back=0
+        - second scenario - fetching with hours when look_back=0
+
+        When
+        - trying to fetch incidents for 3 rounds.
+
+        Then
+        - first fetch - should fetch incidents 1, 2, 3 (because only them match the query)
+        - second fetch - should fetch incident 4
+        - third fetch - should fetch incident 5
+        - fourth fetch - should fetch nothing as there are not new incidents who match the query
+        """
+
+        # reset last fetch and tickets
+        self.LAST_RUN = {}
+
+        mocker.patch.object(demisto, 'getLastRun', return_value=self.LAST_RUN)
+        mocker.patch.object(demisto, 'setLastRun', side_effect=self.set_last_run)
+        mocker.patch.object(client_mocker, 'list_incidents', return_value=incidents)
+        mocker.patch('MicrosoftCloudAppSecurity.format_fetch_start_time_to_timestamp',
+                     side_effect=create_occur_timestamp)
+
+        filters = {'severity': {'eq': []}, 'resolutionStatus': {'eq': []}}
+        max_results = params.get('limit')
+        first_fetch = params.get('first_fetch')
+        look_back = params.get('look_back')
+
+        # first fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 3
+        for expected_incident_id, ticket in zip(['1', '2', '3'], alerts):
+            assert ticket.get('name') == f'test{expected_incident_id}'
+
+        # second fetch preparation
+        incidents = phase2_incident
+        mocker.patch.object(client_mocker, 'list_incidents', return_value=incidents)
+
+        # second fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 1
+        assert alerts[0].get('name') == 'test4'
+
+        # third fetch preparation
+        incidents = phase3_incident
+        mocker.patch.object(client_mocker, 'list_incidents', return_value=incidents)
+
+        # third fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 1
+        assert alerts[0].get('name') == 'test5'
+
+        # forth fetch preparation
+        incidents = {'data': []}
+        mocker.patch.object(client_mocker, 'list_incidents', return_value=incidents)
+
+        # forth fetch
+        self.LAST_RUN, alerts = fetch_incidents(client=client_mocker, max_results=max_results, last_run=self.LAST_RUN,
+                                                first_fetch=first_fetch, filters=filters, look_back=look_back)
+        assert len(alerts) == 0
+
+    @pytest.mark.parametrize(
+        "incidents, expected_time, last_run_start",
+        [
+            (
+                {
+                    'data': [
+                        {
+                            'title': 'test1',
+                            'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=10)),
+                            '_id': '1',
+                            'entities': []
+                        },
+                        {
+                            'title': 'test2',
+                            'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=10)),
+                            '_id': '2',
+                            'entities': []
+                        },
+                    ]
+                },
+                '2022-05-15T10:50:00.001000',
+                {}
+            ),
+            (
+                {
+                    'data': [
+                        {
+                            'title': 'test1',
+                            'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=8)),
+                            '_id': '1',
+                            'entities': []
+                        },
+                        {
+                            'title': 'test2',
+                            'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=8)),
+                            '_id': '2',
+                            'entities': []
+                        },
+                    ]
+                },
+                '2022-05-15T10:52:00.001000',
+                {'time': '2022-05-15T10:50:00.001000', "limit": 10}
+            ),
+            (
+                {
+                    'data': [
+                        {
+                            'title': 'test1',
+                            'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=5)),
+                            '_id': '1',
+                            'entities': []
+                        },
+                        {
+                            'title': 'test2',
+                            'timestamp': create_occur_timestamp(FREEZE_TIMESTAMP, timedelta(minutes=5)),
+                            '_id': '2',
+                            'entities': []
+                        },
+                    ]
+                },
+                '2022-05-15T10:55:00.001000',
+                {'time': '2022-05-15T10:50:00', "limit": 10}
+            )
+        ]
+    )
+    def test_fetch_incidents_with_different_last_runs(self, mocker, incidents, expected_time, last_run_start):
+        """
+        Given
+        - Case A: fetching incidents without any last run
+        - Case B: fetching incidents with last run containing date in miliseconds
+        - Case C: fetching incidents with last run not containing date in miliseconds
+
+        When
+        - trying to fetch incidents only one round
+
+        Then
+        - make sure that the new time in the last run contains the date with miliseconds
+        - make sure that the new time in the last run is increased with one milisecond
+        - make sure incidents were returned and were parsed successfully
+        """
+        self.LAST_RUN = last_run_start
+
+        mocker.patch.object(demisto, 'getLastRun', return_value=self.LAST_RUN)
+        mocker.patch.object(demisto, 'setLastRun', side_effect=self.set_last_run)
+        mocker.patch(
+            'MicrosoftCloudAppSecurity.format_fetch_start_time_to_timestamp',
+            side_effect=create_occur_timestamp
+        )
+
+        mocker.patch.object(client_mocker, 'list_incidents', return_value=incidents)
+
+        self.LAST_RUN, alerts = fetch_incidents(
+            client=client_mocker, max_results='10', last_run=self.LAST_RUN,
+            first_fetch='1 year ago', filters={'severity': {'eq': []}, 'resolutionStatus': {'eq': []}}, look_back=0
+        )
+
+        assert self.LAST_RUN.get('time') == expected_time
+        assert len(alerts) == 2
+
+
+@pytest.mark.parametrize(
+    "fetch_time",
+    [
+        "2022-05-15T10:50:00",
+        "2022-05-15T10:50:00.000",
+        "2022-05-15T10:50:15.123",
+        "2022-05-15T10:50:15.100",
+        "2022-05-15T10:50:15.120"
+    ]
+)
+def test_format_fetch_start_time_to_timestamp(mocker, fetch_time):
+    """
+    Given
+    - Case A: fetch time that does not have miliseconds
+    - Case B: fetch time that have miliseconds with zeros only
+    - Case C + D + E: fetch time that have miliseconds that are not zeros only
+
+    When
+    - running format_fetch_start_time_to_timestamp
+
+    Then
+    - make sure we create a timestamp that is only based on 13 digits
+    """
+    from MicrosoftCloudAppSecurity import format_fetch_start_time_to_timestamp
+    start_freeze_time(fetch_time)
+    mocker.patch('MicrosoftCloudAppSecurity.parse', return_value=datetime.now())
+    timestamp = format_fetch_start_time_to_timestamp(fetch_time)
+    assert len(str(timestamp)) == 13
+
+
+@pytest.mark.parametrize(
+    "timestamp, expected_datetime_string",
+    [
+        (1652611800000, "2022-05-15T10:50:00.000"),
+        (1652611812000, "2022-05-15T10:50:12.000"),
+        (1652611812100, "2022-05-15T10:50:12.100"),
+        (1652611812120, "2022-05-15T10:50:12.120"),
+        (1652611812123, "2022-05-15T10:50:12.123")
+    ]
+)
+def test_timestamp_to_datetime_string(timestamp, expected_datetime_string):
+    """
+    Given
+    - 13 characters timestamps
+
+    When
+    - running timestamp_to_datetime_string
+
+    Then
+    - make sure a valid datetime string is created
+    """
+    from MicrosoftCloudAppSecurity import timestamp_to_datetime_string
+    assert timestamp_to_datetime_string(timestamp) == expected_datetime_string

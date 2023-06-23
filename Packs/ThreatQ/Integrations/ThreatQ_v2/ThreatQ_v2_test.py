@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 import demistomock as demisto
 
+
 MOCK_URL = "http://123-fake-api.com"
 MOCK_API_URL = MOCK_URL + "/api"
 
@@ -96,6 +97,18 @@ MOCK_SEARCH_BY_NAME_RESPONSE = {
         {'id': 2019, 'value': 'foo@demisto.com', 'object': 'indicator'}
     ]
 }
+
+MOCK_SEARCH_BY_EMAIL_RESPONSE = {
+    'total': 1,
+    'data': [
+        {'class': 'network', 'score': 0, 'value': 'foo@demisto.com', 'touched_at': '2019-11-20 08:23:21', 'id': 2019,
+         'updated_at': '2019-11-20 08:22:51', 'published_at': '2019-11-20 08:22:51', 'created_at': '2019-11-20 08:22:51',
+         'status_id': 5, 'type_id': 4, 'adversaries': [], 'type': {'name': 'Email Address', 'id': 4, 'class': 'network'},
+         'status': {'name': 'Whitelisted', 'id': 5, 'description': 'Poses NO risk and should never be deployed.'},
+         'sources': [{'indicator_id': 20, 'indicator_status_id': 5, 'published_at': '2019-11-20 08:22:51', 'source_id': 8,
+                      'id': 22, 'created_at': '2019-11-20 08:22:51', 'source_type': 'users', 'creator_source_id': 8,
+                      'indicator_type_id': 4, 'reference_id': 1, 'updated_at': '2019-11-20 08:22:51',
+                      'name': 'foo@demisto.com'}]}], 'limit': 500, 'offset': 0}
 
 MOCK_GET_EVENT_RESPONSE = {
     'data': {
@@ -228,7 +241,6 @@ def test_create_indicator_command(mocker, requests_mock):
     requests_mock.post(MOCK_API_URL + '/token', json=MOCK_ACCESS_TOKEN)
     requests_mock.get(MOCK_API_URL + '/indicator/statuses/1', json=MOCK_GET_INDICATOR_STATUS_RESPONSE_1)
     requests_mock.get(MOCK_API_URL + '/indicator/types/4', json=MOCK_GET_INDICATOR_TYPE_RESPONSE_1)
-
     from ThreatQ_v2 import create_indicator_command
     create_indicator_command()
 
@@ -288,8 +300,7 @@ def test_upload_file_command(mocker, requests_mock):
 def test_get_email_reputation(mocker, requests_mock):
     mock_demisto(mocker, MOCK_EMAIL_REPUTATION_ARGUMENTS)
     requests_mock.post(MOCK_API_URL + '/token', json=MOCK_ACCESS_TOKEN)
-    requests_mock.get(MOCK_API_URL + '/search?query=foo@demisto.com&limit=1',
-                      json=MOCK_SEARCH_BY_NAME_RESPONSE)
+    requests_mock.post(MOCK_API_URL + '/indicators/query?limit=500&offset=0&sort=id', json=MOCK_SEARCH_BY_EMAIL_RESPONSE)
     requests_mock.get(MOCK_API_URL + '/indicators/2019?with=attributes,sources,score,type',
                       json=MOCK_GET_INDICATOR_RESPONSE)
     requests_mock.get(MOCK_API_URL + '/indicator/statuses/1', json=MOCK_GET_INDICATOR_STATUS_RESPONSE_1)
@@ -400,3 +411,40 @@ def test_get_errors_string_from_bad_request():
         res.json.return_value = error_response
         actual_result = get_errors_string_from_bad_request(res, 400)
         assert expected_result in actual_result
+
+
+def test_second_attempt_for_reputation_requests(mocker):
+    """
+        Given:
+            - An old format ThreatQ request body.
+        When:
+            - run tq_request to send a request
+        Then:
+            - Verify that a request with the new format body was sent and returned a response as expected.
+    """
+    mock_demisto(mocker, MOCK_EMAIL_REPUTATION_ARGUMENTS)
+
+    import requests
+    from ThreatQ_v2 import tq_request
+
+    class MockResponse:
+        def __init__(self, status_code, data={}) -> None:
+            self.status_code = status_code
+            self.data = data
+
+        def json(self):
+            return self.data
+
+    def get_response(
+        method, url, data=None, headers=None, verify=False, files=None, allow_redirects=True
+    ):
+        if url.endswith('/token'):
+            return MockResponse(status_code=200, data=MOCK_ACCESS_TOKEN)
+        return MockResponse(status_code=200, data=MOCK_SEARCH_BY_EMAIL_RESPONSE)
+
+    mocker.patch.object(requests, "request", side_effect=get_response)
+
+    results = tq_request('post', '', params={"criteria": {"value": "foo@demisto.com"}},
+                         retrieve_entire_response=True)
+    assert results.status_code == 200
+    assert results.json()['data'][0]['value'] == 'foo@demisto.com'
